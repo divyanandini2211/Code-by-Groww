@@ -273,12 +273,22 @@ export function App() {
   };
 
   const handleCreateWatchlist = async () => {
-    if (!newWatchlistName.trim()) return;
-    const res = await api.createWatchlist(newWatchlistName);
-    setWatchlists([res, ...watchlists]);
-    setSelectedWatchlistId(res.id);
-    setNewWatchlistName('');
-    setShowAddModal(false);
+    const trimmed = newWatchlistName.trim();
+    if (!trimmed) return;
+    try {
+      const res = await api.createWatchlist(trimmed);
+      if (res && res.id) {
+        setWatchlists(prev => [res, ...prev]);
+        setSelectedWatchlistId(res.id);
+        setNewWatchlistName('');
+        setShowAddModal(false);
+      } else {
+        alert(res?.detail || 'Failed to create watchlist. Please try again.');
+      }
+    } catch (err: any) {
+      console.error('Error creating watchlist:', err);
+      alert('Error creating watchlist: ' + (err.message || 'Network error'));
+    }
   };
 
   const handleAddStock = async (symbol: string) => {
@@ -867,21 +877,37 @@ export function App() {
           </div>
 
           {!isSidebarCollapsed && showAddModal && (
-            <div style={{ padding: '10px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleCreateWatchlist();
+              }}
+              style={{ padding: '10px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '6px' }}
+            >
               <input
                 type="text"
+                autoFocus
                 placeholder="Watchlist name..."
                 value={newWatchlistName}
                 onChange={(e) => setNewWatchlistName(e.target.value)}
                 style={{ height: '28px', fontSize: '11px' }}
               />
-              <button
-                onClick={handleCreateWatchlist}
-                style={{ background: 'var(--groww-green)', color: '#000', fontWeight: 600, padding: '4px', borderRadius: '4px', fontSize: '11px' }}
-              >
-                Add Watchlist
-              </button>
-            </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button
+                  type="submit"
+                  style={{ flex: 1, background: 'var(--groww-green)', color: '#000', fontWeight: 600, padding: '5px', borderRadius: '4px', fontSize: '11px' }}
+                >
+                  Create Watchlist
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  style={{ background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-color)', padding: '5px 8px', borderRadius: '4px', fontSize: '11px' }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           )}
 
           {/* Watchlists List */}
