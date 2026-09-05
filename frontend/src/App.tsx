@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
-  Search, CheckCircle2, ChevronRight, Zap, RefreshCw, ArrowLeftRight,
+  Search, CheckCircle2, ChevronRight, Zap, RefreshCw,
   PanelLeftClose, PanelLeftOpen, List, User as UserIcon, LogIn, LogOut, ShieldCheck,
   Gauge, FastForward, Play, AlertCircle
 } from 'lucide-react';
@@ -15,7 +15,6 @@ export function App() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [leftWidth, setLeftWidth] = useState(210);
   const [splitRatio, setSplitRatio] = useState(50); // Balanced 50/50 split
-  const [isLayoutSwapped, setIsLayoutSwapped] = useState(false); // Can swap Chart & Table positions!
   
   const isDraggingLeft = useRef(false);
   const isDraggingCenter = useRef(false);
@@ -589,39 +588,30 @@ export function App() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 18px',
+        padding: '0 20px',
         background: 'var(--bg-secondary)',
         flexShrink: 0
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        {/* Left: Brand Logo & Live Speed-Up Slider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '26px', height: '26px', borderRadius: '6px', background: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={16} color="#000" />
             </div>
             <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '-0.5px' }}>Groww <span style={{ color: 'var(--groww-green)', fontWeight: 500, fontSize: '12px' }}>Smart Watchlist</span></span>
           </div>
 
-          <div 
-            onClick={() => setShowSimPromptModal(true)}
-            className={`badge ${marketStatus?.status === 'OPEN' ? 'badge-green' : 'badge-amber'}`} 
-            style={{ padding: '4px 9px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-            title="Click to view Market Simulation settings"
-          >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }}></span>
-            {marketStatus?.status === 'OPEN' ? 'MARKET OPEN (NSE/BSE)' : `MARKET CLOSED (Replaying ${simDate})`}
-          </div>
-
-          {/* Live Speed-Up Slider (Safe within ML model capacity: 0.5x to 10.0x) */}
+          {/* Live Speed-Up Slider */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
             background: 'var(--bg-card)',
             border: '1px solid var(--border-color)',
-            padding: '3px 10px',
+            padding: '4px 12px',
             borderRadius: '6px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--groww-green)', fontSize: '11px', fontWeight: 600 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--groww-green)', fontSize: '11px', fontWeight: 600 }}>
               <FastForward size={13} />
               <span style={{ color: 'var(--text-secondary)' }}>Speed:</span>
               <b style={{ color: 'var(--text-primary)', minWidth: '32px' }}>{simSpeed.toFixed(1)}x</b>
@@ -635,12 +625,12 @@ export function App() {
               value={simSpeed}
               onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
               style={{
-                width: '75px',
+                width: '80px',
                 accentColor: 'var(--groww-green)',
                 cursor: 'pointer',
                 height: '4px'
               }}
-              title={`Simulation speed: ${simSpeed}x (ML safe limit: 10x)`}
+              title={`Simulation playback speed: ${simSpeed}x (ML safe limit: 10x)`}
             />
 
             <span style={{
@@ -655,35 +645,10 @@ export function App() {
               {simSpeed >= 10 ? 'ML MAX' : 'ML SAFE'}
             </span>
           </div>
-
-          <span style={{ fontSize: '11px', color: isConnected ? 'var(--groww-green)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Activity size={12} /> {isConnected ? 'Live WebSocket Active' : 'Connecting...'}
-          </span>
         </div>
 
-        {/* Global Controls & Layout Swapper */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          
-          {/* Swap Panels Button */}
-          <button
-            onClick={() => setIsLayoutSwapped(!isLayoutSwapped)}
-            title="Swap Table and Detailed Chart positions"
-            style={{
-              background: 'var(--bg-card)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-color)',
-              padding: '6px 10px',
-              borderRadius: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '11px',
-              fontWeight: 600
-            }}
-          >
-            <ArrowLeftRight size={13} color="var(--groww-green)" /> 
-            {isLayoutSwapped ? 'Default View' : 'Swap Table & Chart'}
-          </button>
+        {/* Right: Search, Checkpoint, and User Profile */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
 
           {/* Search Bar */}
           <div style={{ position: 'relative', width: '240px' }}>
@@ -1332,10 +1297,10 @@ export function App() {
           title="Drag to resize panel"
         />
 
-        {/* WORKSPACE AREA: (Center + Right, with dynamic swap) */}
+        {/* WORKSPACE AREA: (Center: Table & AI Briefing | Right: Detailed Chart & Metrics) */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           
-          {/* Section A (Default: Table + Executive Briefing, Swappable: Chart) */}
+          {/* Section A: What Changed Executive Briefing + Ranked Watchlist Table */}
           <div style={{
             width: `${splitRatio}%`,
             minWidth: '320px',
@@ -1345,48 +1310,42 @@ export function App() {
             flexDirection: 'column',
             gap: '10px'
           }}>
-            {!isLayoutSwapped ? (
-              <>
-                {/* Executive AI Briefing (Google Gemini) */}
-                <div style={{
-                  background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
-                      <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
-                    </div>
-                    
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Clock size={13} color="var(--text-muted)" />
-                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Away window:</span>
-                      <select
-                        value={sinceMinutes}
-                        onChange={(e) => setSinceMinutes(Number(e.target.value))}
-                        style={{ padding: '2px 6px', fontSize: '11px', height: '24px' }}
-                      >
-                        <option value={15}>15 mins</option>
-                        <option value={30}>30 mins</option>
-                        <option value={45}>45 mins</option>
-                        <option value={60}>1 hour</option>
-                        <option value={120}>2 hours</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <p style={{ fontSize: '12px', lineHeight: '1.45', color: 'var(--text-primary)', margin: 0 }}>
-                    {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
-                  </p>
+            {/* Executive AI Briefing (Google Gemini) */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
+                  <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
                 </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Clock size={13} color="var(--text-muted)" />
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Away window:</span>
+                  <select
+                    value={sinceMinutes}
+                    onChange={(e) => setSinceMinutes(Number(e.target.value))}
+                    style={{ padding: '2px 6px', fontSize: '11px', height: '24px' }}
+                  >
+                    <option value={15}>15 mins</option>
+                    <option value={30}>30 mins</option>
+                    <option value={45}>45 mins</option>
+                    <option value={60}>1 hour</option>
+                    <option value={120}>2 hours</option>
+                  </select>
+                </div>
+              </div>
 
-                {renderWatchlistTable()}
-              </>
-            ) : (
-              renderChartDeepDive()
-            )}
+              <p style={{ fontSize: '12px', lineHeight: '1.45', color: 'var(--text-primary)', margin: 0 }}>
+                {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
+              </p>
+            </div>
+
+            {renderWatchlistTable()}
           </div>
 
           {/* DRAGGABLE DIVIDER 2 */}
@@ -1406,7 +1365,7 @@ export function App() {
             title="Drag to resize panels"
           />
 
-          {/* Section B (Default: Detailed Chart, Swappable: Table + Executive Briefing) */}
+          {/* Section B: Detailed Chart & ML Evaluation Matrix */}
           <div style={{
             width: `${100 - splitRatio}%`,
             minWidth: '320px',
@@ -1417,53 +1376,88 @@ export function App() {
             gap: '10px',
             background: 'var(--bg-secondary)'
           }}>
-            {!isLayoutSwapped ? (
-              renderChartDeepDive()
-            ) : (
-              <>
-                {/* Executive AI Briefing (Google Gemini) */}
-                <div style={{
-                  background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
-                      <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
-                    </div>
-                    
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Clock size={13} color="var(--text-muted)" />
-                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Away window:</span>
-                      <select
-                        value={sinceMinutes}
-                        onChange={(e) => setSinceMinutes(Number(e.target.value))}
-                        style={{ padding: '2px 6px', fontSize: '11px', height: '24px' }}
-                      >
-                        <option value={15}>15 mins</option>
-                        <option value={30}>30 mins</option>
-                        <option value={45}>45 mins</option>
-                        <option value={60}>1 hour</option>
-                        <option value={120}>2 hours</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <p style={{ fontSize: '12px', lineHeight: '1.45', color: 'var(--text-primary)', margin: 0 }}>
-                    {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
-                  </p>
-                </div>
-
-                {renderWatchlistTable()}
-              </>
-            )}
+            {renderChartDeepDive()}
           </div>
 
         </div>
 
       </div>
+
+      {/* Bottom Global Status Bar (Institutional Terminal Style) */}
+      <footer style={{
+        height: '28px',
+        background: 'var(--bg-secondary)',
+        borderTop: '1px solid var(--border-color)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 16px',
+        fontSize: '11px',
+        color: 'var(--text-muted)',
+        flexShrink: 0,
+        zIndex: 30
+      }}>
+        {/* Left: Market Status (Clickable to open simulation modal) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div
+            onClick={() => setShowSimPromptModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              color: marketStatus?.status === 'OPEN' ? 'var(--groww-green)' : '#ffba00',
+              fontWeight: 600
+            }}
+            title="Click to view & configure Market Replay Simulation"
+          >
+            <span style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: marketStatus?.status === 'OPEN' ? 'var(--groww-green)' : '#ffba00',
+              display: 'inline-block'
+            }}></span>
+            <span>{marketStatus?.status === 'OPEN' ? 'MARKET OPEN (NSE/BSE)' : `MARKET CLOSED (Replaying ${simDate})`}</span>
+          </div>
+
+          <span style={{ color: 'var(--border-color)' }}>|</span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Gauge size={13} color="var(--groww-green)" />
+            <span>Simulation Speed: <b style={{ color: 'var(--text-primary)' }}>{simSpeed.toFixed(1)}x</b></span>
+            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>(Safe &le; 10x)</span>
+          </div>
+        </div>
+
+        {/* Right: Live Connection Statuses */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Live WebSocket Connection */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            color: isConnected ? 'var(--groww-green)' : 'var(--groww-red)'
+          }}>
+            <Activity size={13} />
+            <span>{isConnected ? 'WebSocket Stream: Live' : 'WebSocket: Offline'}</span>
+          </div>
+
+          <span style={{ color: 'var(--border-color)' }}>|</span>
+
+          {/* Neon DB Session Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: 'var(--groww-green)',
+              display: 'inline-block'
+            }}></span>
+            <span>{currentUser ? `Neon DB: ${currentUser.name}` : 'Neon Cloud DB: Connected'}</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
