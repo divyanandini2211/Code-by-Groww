@@ -85,10 +85,20 @@ class MLEngine:
             )
         bullet_text = "\n".join(summary_bullets)
 
+        gemini_key = settings.GEMINI_API_KEY
+        if not gemini_key or not gemini_key.startswith("AQ."):
+            from dotenv import dotenv_values
+            from pathlib import Path
+            root_env = Path(__file__).resolve().parents[3] / ".env"
+            if not root_env.exists():
+                root_env = Path(__file__).resolve().parents[2] / ".env"
+            env_dict = dotenv_values(str(root_env))
+            gemini_key = env_dict.get("GEMINI_API_KEY") or gemini_key
+
         # 1. If Gemini API key is available, call Gemini API
-        if settings.GEMINI_API_KEY:
+        if gemini_key:
             try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={settings.GEMINI_API_KEY}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={gemini_key}"
                 prompt = f"""You are Groww's Smart Market Watchlist AI.
 A user returned to their watchlist after {away_duration_str}.
 Here are the top market movements detected:
@@ -99,7 +109,7 @@ Generate a concise, elegant 2-sentence executive summary telling the user what m
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}]
                 }
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(url, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()

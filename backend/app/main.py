@@ -45,3 +45,42 @@ async def root():
         "status": "healthy",
         "docs_url": "/docs"
     }
+
+from fastapi import WebSocket, WebSocketDisconnect
+from sqlalchemy.future import select
+from app.core.database import AsyncSessionLocal
+from app.models.schemas import Stock
+
+@app.websocket("/ws/market")
+async def websocket_market_stream(websocket: WebSocket):
+    """
+    WebSocket Live Market Stream:
+    Pushes live ticker quotes, replay timestamps, and market status to connected clients every 3 seconds.
+    """
+    await websocket.accept()
+    try:
+        while True:
+            virtual_time = market_service.get_current_virtual_time()
+            async with AsyncSessionLocal() as session:
+                res = await session.execute(select(Stock).order_by(Stock.symbol.asc()))
+                stocks = res.scalars().all()
+                data = {
+                    "type": "MARKET_TICK",
+                    "status": "OPEN" if market_service.is_market_open_now() else "CLOSED",
+                    "is_replay_mode": market_service.is_replay_mode,
+                    "virtual_time": virtual_time.isoformat(),
+                    "stocks": [
+                        {
+                            "symbol": s.symbol,
+                            "current_price": round(s.current_price, 2),
+                            "previous_close": round(s.previous_close, 2),
+                            "pct_change": round(((s.current_price - s.previous_close) / s.previous_close) * 100.0, 2) if s.previous_close else 0.0
+                        }
+                        for s in stocks
+                    ]
+                }
+            await websocket.send_json(data)
+            await asyncio.sleep(3)
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+

@@ -67,6 +67,33 @@ async def list_stocks(db: AsyncSession = Depends(get_db)):
         })
     return result
 
+@router.get("/search")
+async def search_stocks(query: str = Query(..., min_length=1), db: AsyncSession = Depends(get_db)):
+    """Search stocks by symbol, company name, or sector for watchlist addition."""
+    q = f"%{query}%"
+    res = await db.execute(
+        select(Stock)
+        .filter(
+            (Stock.symbol.ilike(q)) | 
+            (Stock.name.ilike(q)) | 
+            (Stock.sector.ilike(q))
+        )
+        .limit(10)
+    )
+    stocks = res.scalars().all()
+    return [
+        {
+            "symbol": s.symbol,
+            "name": s.name,
+            "sector": s.sector,
+            "exchange": s.exchange,
+            "current_price": round(s.current_price, 2),
+            "fifty_two_week_high": round(s.fifty_two_week_high, 2),
+            "fifty_two_week_low": round(s.fifty_two_week_low, 2)
+        }
+        for s in stocks
+    ]
+
 @router.get("/stocks/{symbol}/history")
 async def get_stock_history(symbol: str, limit: int = 60, db: AsyncSession = Depends(get_db)):
     """Returns the latest intraday candles for a stock."""
@@ -88,3 +115,51 @@ async def get_stock_history(symbol: str, limit: int = 60, db: AsyncSession = Dep
         }
         for t in reversed(ticks)
     ]
+
+@router.post("/simulate-anomaly")
+async def simulate_anomaly(
+    symbol: str = Query(..., description="Stock symbol to shock"),
+    price_shock_pct: float = Query(2.5, description="Price change percentage, e.g. 2.5 or -3.0"),
+    volume_multiplier: float = Query(3.5, description="Volume surge multiplier, e.g. 3.0x"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Pitch/Demo Tool for Judges:
+    Injects a real-time anomaly on a stock to immediately demonstrate the ML Attention & Anomaly Engine.
+    """
+    sym = symbol.upper()
+    stock_res = await db.execute(select(Stock).filter(Stock.symbol == sym))
+    stock = stock_res.scalars().first()
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"Stock {sym} not found")
+
+    new_price = round(stock.current_price * (1.0 + (price_shock_pct / 100.0)), 2)
+    stock.current_price = new_price
+    virtual_time = market_service.get_current_virtual_time()
+    stock.updated_at = virtual_time
+
+    # Record anomalous tick
+    simulated_tick = StockTick(
+        symbol=sym,
+        timestamp=virtual_time,
+        price=new_price,
+        open=stock.current_price,
+        high=max(stock.current_price, new_price),
+        low=min(stock.current_price, new_price),
+        close=new_price,
+        volume=round(stock.avg_volume_20d * (volume_multiplier / 375.0), 1),
+        vwap=new_price
+    )
+    db.add(simulated_tick)
+    await db.commit()
+
+    return {
+        "status": "anomaly_injected",
+        "symbol": sym,
+        "new_price": new_price,
+        "price_shock_pct": price_shock_pct,
+        "volume_multiplier": volume_multiplier,
+        "timestamp": virtual_time.astimezone(IST).strftime("%H:%M:%S IST"),
+        "message": f"Successfully injected {price_shock_pct:+.2f}% shock with {volume_multiplier}x volume on {sym}."
+    }
+
