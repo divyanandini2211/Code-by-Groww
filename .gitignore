@@ -7,6 +7,7 @@ env/
 # Environment variables & secrets
 .env
 *.env.local
+*.pem
 
 # Python cache
 __pycache__/

@@ -6,6 +6,7 @@ try:
 except ImportError:
     yf = None
 from sqlalchemy import desc, func
+from sqlalchemy.future import select
 from app.core.database import AsyncSessionLocal
 from app.models.schemas import Stock, StockTick, UserSession
 
