@@ -109,6 +109,32 @@ export function App() {
         if (prev.length === 0) return prev;
         const lastCandle = prev[prev.length - 1];
         const newPrice = activeTick.current_price;
+
+        // Extract HH:MM from marketData.virtual_time (IST)
+        let tickHHMM = '';
+        if (marketData.virtual_time) {
+          try {
+            const d = new Date(marketData.virtual_time);
+            if (!isNaN(d.getTime())) {
+              tickHHMM = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+            }
+          } catch (_) {}
+        }
+
+        // When virtual time advances to a new minute, start a new candle naturally
+        if (tickHHMM && lastCandle.timestamp && tickHHMM !== lastCandle.timestamp) {
+          const newCandle = {
+            timestamp: tickHHMM,
+            open: lastCandle.close,
+            high: Math.max(lastCandle.close, newPrice),
+            low: Math.min(lastCandle.close, newPrice),
+            close: newPrice,
+            volume: Math.round(300 + Math.random() * 600)
+          };
+          return [...prev.slice(-59), newCandle];
+        }
+
+        // Live intra-minute updates to the active candle
         const updatedLast = {
           ...lastCandle,
           close: newPrice,
@@ -525,7 +551,7 @@ export function App() {
         candles={candles}
         symbol={selectedStock}
         referencePrice={activeStockInfo.price_at_last_seen}
-        height={240}
+        height={350}
       />
 
       {/* ML Evaluation Metrics Box */}

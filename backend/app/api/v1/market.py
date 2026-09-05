@@ -107,14 +107,31 @@ async def search_stocks(query: str = Query(..., min_length=1), db: AsyncSession 
 
 @router.get("/stocks/{symbol}/history")
 async def get_stock_history(symbol: str, limit: int = 60, db: AsyncSession = Depends(get_db)):
-    """Returns the latest intraday candles for a stock."""
+    """Returns the latest intraday candles for a stock up to the current simulation time."""
+    sym = symbol.upper()
+    query = select(StockTick).filter(StockTick.symbol == sym)
+
+    if market_service.is_replay_mode and market_service.replay_timestamps:
+        current_virtual_time = market_service.get_current_virtual_time()
+        query = query.filter(StockTick.timestamp <= current_virtual_time)
+
     res = await db.execute(
-        select(StockTick)
-        .filter(StockTick.symbol == symbol.upper())
-        .order_by(StockTick.timestamp.desc())
-        .limit(limit)
+        query.order_by(StockTick.timestamp.desc()).limit(limit)
     )
     ticks = res.scalars().all()
+
+    # Fallback if at the very start of replay session
+    if len(ticks) < 5:
+        fallback_res = await db.execute(
+            select(StockTick)
+            .filter(StockTick.symbol == sym)
+            .order_by(StockTick.timestamp.asc())
+            .limit(limit)
+        )
+        ticks = fallback_res.scalars().all()
+    else:
+        ticks = list(reversed(ticks))
+
     return [
         {
             "timestamp": t.timestamp.astimezone(IST).strftime("%H:%M"),
@@ -124,7 +141,7 @@ async def get_stock_history(symbol: str, limit: int = 60, db: AsyncSession = Dep
             "close": t.close,
             "volume": t.volume
         }
-        for t in reversed(ticks)
+        for t in ticks
     ]
 
 @router.post("/simulate-anomaly")
@@ -144,6 +161,7 @@ async def simulate_anomaly(
     if not stock:
         raise HTTPException(status_code=404, detail=f"Stock {sym} not found")
 
+    old_price = stock.current_price
     new_price = round(stock.current_price * (1.0 + (price_shock_pct / 100.0)), 2)
     stock.current_price = new_price
     virtual_time = market_service.get_current_virtual_time()
@@ -154,9 +172,9 @@ async def simulate_anomaly(
         symbol=sym,
         timestamp=virtual_time,
         price=new_price,
-        open=stock.current_price,
-        high=max(stock.current_price, new_price),
-        low=min(stock.current_price, new_price),
+        open=old_price,
+        high=max(old_price, new_price),
+        low=min(old_price, new_price),
         close=new_price,
         volume=round(stock.avg_volume_20d * (volume_multiplier / 375.0), 1),
         vwap=new_price
