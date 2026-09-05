@@ -1,8 +1,10 @@
 import asyncio
 from datetime import datetime, time, timezone
 import pytz
-import yfinance as yf
-from sqlalchemy.future import select
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
 from sqlalchemy import desc, func
 from app.core.database import AsyncSessionLocal
 from app.models.schemas import Stock, StockTick, UserSession
