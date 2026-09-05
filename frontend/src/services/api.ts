@@ -1,6 +1,56 @@
 const API_BASE = 'http://127.0.0.1:8000/api/v1';
 
+const getAuthHeaders = (): HeadersInit => {
+  const token = localStorage.getItem('groww_auth_token');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 export const api = {
+  // Auth & Session Endpoints
+  register: async (name: string, email: string, password: string) => {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+    });
+    return res.json();
+  },
+
+  login: async (email: string, password: string) => {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    return res.json();
+  },
+
+  getCurrentUser: async () => {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  },
+
+  logout: async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+    } finally {
+      localStorage.removeItem('groww_auth_token');
+      localStorage.removeItem('groww_user_profile');
+    }
+  },
+
   getMarketStatus: async () => {
     const res = await fetch(`${API_BASE}/market/status`);
     return res.json();
@@ -22,14 +72,16 @@ export const api = {
   },
 
   getWatchlists: async () => {
-    const res = await fetch(`${API_BASE}/watchlists/`);
+    const res = await fetch(`${API_BASE}/watchlists/`, {
+      headers: getAuthHeaders(),
+    });
     return res.json();
   },
 
   createWatchlist: async (name: string, description: string = '') => {
     const res = await fetch(`${API_BASE}/watchlists/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ name, description }),
     });
     return res.json();
@@ -55,13 +107,17 @@ export const api = {
     const url = sinceMinutes !== undefined
       ? `${API_BASE}/watchlists/${watchlistId}/intelligence?since_minutes_ago=${sinceMinutes}`
       : `${API_BASE}/watchlists/${watchlistId}/intelligence`;
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+    });
     return res.json();
   },
 
-  saveCheckpoint: async (userId: string = 'default_user') => {
-    const res = await fetch(`${API_BASE}/watchlists/checkpoint?user_id=${userId}`, {
+  saveCheckpoint: async (userId?: string) => {
+    const query = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+    const res = await fetch(`${API_BASE}/watchlists/checkpoint${query}`, {
       method: 'POST',
+      headers: getAuthHeaders(),
     });
     return res.json();
   },

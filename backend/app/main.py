@@ -4,12 +4,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.database import engine, Base
 from app.api.v1.market import router as market_router
 from app.api.v1.watchlist import router as watchlist_router
+from app.api.v1.auth import router as auth_router
 from app.services.market_service import market_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure all tables exist in Neon DB (non-destructive)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     # Initialize market engine & start background ticking task
     await market_service.initialize()
     task = asyncio.create_task(market_service.start_background_loop(interval_seconds=15))
@@ -35,6 +41,7 @@ app.add_middleware(
 )
 
 # Register routers
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["User Authentication & Sessions"])
 app.include_router(market_router, prefix="/api/v1/market", tags=["Market Data & Simulation"])
 app.include_router(watchlist_router, prefix="/api/v1/watchlists", tags=["Smart Watchlists & AI Intelligence"])
 

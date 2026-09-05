@@ -2,10 +2,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
   Search, CheckCircle2, ChevronRight, Zap, RefreshCw, ArrowLeftRight,
-  PanelLeftClose, PanelLeftOpen, List
+  PanelLeftClose, PanelLeftOpen, List, User as UserIcon, LogIn, LogOut, ShieldCheck
 } from 'lucide-react';
 import { api } from './services/api';
-import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle } from './types';
+import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle, User } from './types';
 import { DetailedChart } from './components/DetailedChart';
 import { useMarketWebSocket } from './hooks/useMarketWebSocket';
 
@@ -18,6 +18,17 @@ export function App() {
   
   const isDraggingLeft = useRef(false);
   const isDraggingCenter = useRef(false);
+
+  // User Session & Authentication State (Connected to Neon DB)
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  const [authName, setAuthName] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [priceFlashMap, setPriceFlashMap] = useState<Record<string, 'up' | 'down'>>({});
 
   // State
   const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
@@ -41,6 +52,67 @@ export function App() {
 
   // WebSocket Live Stream
   const { marketData, isConnected } = useMarketWebSocket();
+
+  // Handle Real-Time Live WebSocket Market Updates
+  useEffect(() => {
+    if (!marketData || !marketData.stocks) return;
+
+    // 1. Update Market Status
+    if (marketData.status) {
+      setMarketStatus(prev => prev ? { ...prev, status: marketData.status } : null);
+    }
+
+    // 2. Track Price Changes & Flash Colors
+    const newFlashes: Record<string, 'up' | 'down'> = {};
+    marketData.stocks.forEach((tick: { symbol: string; current_price: number }) => {
+      const existing = intelligence?.ranked_insights?.find(s => s.symbol === tick.symbol);
+      if (existing && existing.current_price !== tick.current_price) {
+        newFlashes[tick.symbol] = tick.current_price > existing.current_price ? 'up' : 'down';
+      }
+    });
+
+    if (Object.keys(newFlashes).length > 0) {
+      setPriceFlashMap(prev => ({ ...prev, ...newFlashes }));
+      setTimeout(() => {
+        setPriceFlashMap({});
+      }, 900);
+    }
+
+    // 3. Live Update Table Rows without jitter
+    setIntelligence(prev => {
+      if (!prev || !prev.ranked_insights) return prev;
+      const updated = prev.ranked_insights.map(item => {
+        const live = marketData.stocks.find((s: { symbol: string; current_price: number }) => s.symbol === item.symbol);
+        if (!live) return item;
+        const newPct = item.price_at_last_seen > 0
+          ? Number((((live.current_price - item.price_at_last_seen) / item.price_at_last_seen) * 100).toFixed(2))
+          : item.pct_change_since_seen;
+        return {
+          ...item,
+          current_price: live.current_price,
+          pct_change_since_seen: newPct
+        };
+      });
+      return { ...prev, ranked_insights: updated };
+    });
+
+    // 4. Live Update Active Stock Candle & Chart Action
+    const activeTick = marketData.stocks.find((s: { symbol: string; current_price: number }) => s.symbol === selectedStock);
+    if (activeTick && candles.length > 0) {
+      setCandles(prev => {
+        if (prev.length === 0) return prev;
+        const lastCandle = prev[prev.length - 1];
+        const newPrice = activeTick.current_price;
+        const updatedLast = {
+          ...lastCandle,
+          close: newPrice,
+          high: Math.max(lastCandle.high, newPrice),
+          low: Math.min(lastCandle.low, newPrice)
+        };
+        return [...prev.slice(0, -1), updatedLast];
+      });
+    }
+  }, [marketData, selectedStock]);
 
   // Initial Load
   useEffect(() => {
@@ -111,6 +183,12 @@ export function App() {
 
   const loadInitialData = async () => {
     try {
+      // 1. Check logged-in user profile
+      const user = await api.getCurrentUser();
+      if (user) {
+        setCurrentUser(user);
+      }
+
       const status = await api.getMarketStatus();
       setMarketStatus(status);
 
@@ -122,6 +200,53 @@ export function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    setIsAuthLoading(true);
+
+    try {
+      let res;
+      if (authMode === 'REGISTER') {
+        res = await api.register(authName, authEmail, authPassword);
+      } else {
+        res = await api.login(authEmail, authPassword);
+      }
+
+      if (res.token && res.user) {
+        localStorage.setItem('groww_auth_token', res.token);
+        localStorage.setItem('groww_user_profile', JSON.stringify(res.user));
+        setCurrentUser(res.user);
+        setShowAuthModal(false);
+        setAuthPassword('');
+        // Refresh watchlists for user
+        const userLists = await api.getWatchlists();
+        setWatchlists(userLists);
+        cacheRef.current = {};
+        if (selectedWatchlistId) {
+          loadIntelligence(selectedWatchlistId, sinceMinutes);
+        }
+      } else {
+        setAuthError(res.detail || 'Authentication failed. Check credentials.');
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Network error during authentication');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await api.logout();
+    setCurrentUser(null);
+    cacheRef.current = {};
+    const lists = await api.getWatchlists();
+    setWatchlists(lists);
+    if (selectedWatchlistId) {
+      loadIntelligence(selectedWatchlistId, sinceMinutes);
     }
   };
 
@@ -173,7 +298,10 @@ export function App() {
   };
 
   const handleSaveCheckpoint = async () => {
-    await api.saveCheckpoint('divya_user');
+    const res = await api.saveCheckpoint(currentUser?.id || 'default_user');
+    if (currentUser && res.last_visited_at) {
+      setCurrentUser({ ...currentUser, last_checkpoint: res.last_visited_at });
+    }
     cacheRef.current = {};
     loadIntelligence(selectedWatchlistId, sinceMinutes);
   };
@@ -240,22 +368,30 @@ export function App() {
                 const isSelected = selectedStock === stock.symbol;
                 const isUp = stock.pct_change_since_seen >= 0;
 
+                const isFlashUp = priceFlashMap[stock.symbol] === 'up';
+                const isFlashDown = priceFlashMap[stock.symbol] === 'down';
+
                 return (
                   <tr
                     key={stock.symbol}
                     onClick={() => setSelectedStock(stock.symbol)}
+                    className={isFlashUp ? 'flash-up' : isFlashDown ? 'flash-down' : ''}
                     style={{
                       borderBottom: '1px solid var(--border-color)',
                       cursor: 'pointer',
                       background: isSelected ? 'var(--bg-hover)' : 'transparent',
-                      transition: 'background 0.08s ease'
+                      transition: 'background 0.2s ease'
                     }}
                   >
                     <td style={{ padding: '7px 10px' }}>
-                      <div style={{ fontWeight: 600, fontSize: '12px' }}>{stock.symbol}</div>
+                      <div style={{ fontWeight: 600, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {stock.symbol}
+                        {isFlashUp && <span style={{ color: 'var(--groww-green)', fontSize: '10px' }}>▲</span>}
+                        {isFlashDown && <span style={{ color: 'var(--groww-red)', fontSize: '10px' }}>▼</span>}
+                      </div>
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{stock.name}</div>
                     </td>
-                    <td style={{ padding: '7px 10px', fontWeight: 600, fontSize: '12px' }}>
+                    <td style={{ padding: '7px 10px', fontWeight: 600, fontSize: '12px', color: isFlashUp ? 'var(--groww-green)' : isFlashDown ? 'var(--groww-red)' : 'inherit' }}>
                       ₹{stock.current_price.toFixed(2)}
                     </td>
                     <td style={{ padding: '7px 10px' }}>
@@ -478,6 +614,7 @@ export function App() {
             )}
           </div>
 
+          {/* Checkpoint Button */}
           <button
             onClick={handleSaveCheckpoint}
             title="Persists current market cursor to Neon DB"
@@ -496,8 +633,185 @@ export function App() {
           >
             <CheckCircle2 size={13} color="var(--groww-green)" /> Mark Checkpoint
           </button>
+
+          {/* User Session Profile / Auth Trigger */}
+          {currentUser ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '4px 10px', borderRadius: '6px' }}>
+              <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--groww-green-bg)', border: '1px solid var(--groww-green)', color: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700 }}>
+                {currentUser.name.charAt(0).toUpperCase()}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentUser.name}</span>
+                <span style={{ fontSize: '9px', color: 'var(--groww-green)' }}>Neon Session Active</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                title="Log out of session"
+                style={{ background: 'transparent', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', padding: '2px', marginLeft: '4px' }}
+              >
+                <LogOut size={13} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setAuthError('');
+                setShowAuthModal(true);
+              }}
+              style={{
+                background: 'var(--groww-green)',
+                color: '#000',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '11px',
+                fontWeight: 700
+              }}
+            >
+              <LogIn size={13} color="#000" /> Sign In
+            </button>
+          )}
+
         </div>
       </header>
+
+      {/* Full End-to-End Authentication Modal */}
+      {showAuthModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{
+            width: '360px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '24px',
+            boxShadow: '0 16px 40px rgba(0,0,0,0.8)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={20} color="var(--groww-green)" />
+                <span style={{ fontWeight: 700, fontSize: '15px' }}>
+                  {authMode === 'LOGIN' ? 'Sign In to Groww' : 'Create Groww Account'}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '16px', fontWeight: 600 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+              Persist your custom watchlists, checkpoint cursors, and ML alert preferences directly to <b>Neon Cloud DB</b>.
+            </p>
+
+            {authError && (
+              <div style={{ background: 'var(--groww-red-bg)', color: 'var(--groww-red)', border: '1px solid rgba(235,91,60,0.3)', padding: '8px 10px', borderRadius: '6px', fontSize: '11px' }}>
+                {authError}
+              </div>
+            )}
+
+            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {authMode === 'REGISTER' && (
+                <div>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Divya Nandini"
+                    value={authName}
+                    onChange={(e) => setAuthName(e.target.value)}
+                    style={{ width: '100%', height: '34px', fontSize: '12px' }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="trader@groww.in"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  style={{ width: '100%', height: '34px', fontSize: '12px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Password</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  style={{ width: '100%', height: '34px', fontSize: '12px' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isAuthLoading}
+                style={{
+                  background: 'var(--groww-green)',
+                  color: '#000',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  marginTop: '6px',
+                  cursor: isAuthLoading ? 'not-allowed' : 'pointer',
+                  opacity: isAuthLoading ? 0.7 : 1
+                }}
+              >
+                {isAuthLoading ? 'Syncing with Neon DB...' : authMode === 'LOGIN' ? 'Sign In' : 'Create Account'}
+              </button>
+            </form>
+
+            <div style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
+              {authMode === 'LOGIN' ? (
+                <span>
+                  Don't have an account?{' '}
+                  <b
+                    onClick={() => { setAuthMode('REGISTER'); setAuthError(''); }}
+                    style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
+                  >
+                    Register now
+                  </b>
+                </span>
+              ) : (
+                <span>
+                  Already registered?{' '}
+                  <b
+                    onClick={() => { setAuthMode('LOGIN'); setAuthError(''); }}
+                    style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
+                  >
+                    Sign in here
+                  </b>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Resizable Splitter Layout (VS Code Style) */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>

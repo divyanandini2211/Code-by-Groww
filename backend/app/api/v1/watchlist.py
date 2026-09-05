@@ -8,7 +8,8 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 from app.core.database import get_db
-from app.models.schemas import Watchlist, WatchlistItem, Stock, StockTick, UserSession
+from app.models.schemas import Watchlist, WatchlistItem, Stock, StockTick, UserSession, User
+from app.core.auth import get_optional_user
 from app.services.market_service import market_service
 from app.services.ml_engine import ml_engine
 
@@ -22,28 +23,46 @@ class AddStockRequest(BaseModel):
     symbol: str
 
 @router.get("/")
-async def list_watchlists(db: AsyncSession = Depends(get_db)):
-    """List all created watchlists."""
-    res = await db.execute(select(Watchlist).order_by(Watchlist.created_at.desc()))
+async def list_watchlists(
+    user: Optional[User] = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all created watchlists, showing user's lists and public defaults."""
+    if user:
+        # Show watchlists created by user + default flagship ones
+        res = await db.execute(
+            select(Watchlist)
+            .filter((Watchlist.user_id == user.id) | (Watchlist.user_id == None))
+            .order_by(Watchlist.created_at.desc())
+        )
+    else:
+        res = await db.execute(select(Watchlist).order_by(Watchlist.created_at.desc()))
+    
     watchlists = res.scalars().all()
     return [
         {
             "id": w.id,
             "name": w.name,
             "description": w.description,
+            "user_id": w.user_id,
             "created_at": w.created_at
         }
         for w in watchlists
     ]
 
 @router.post("/")
-async def create_watchlist(payload: CreateWatchlistRequest, db: AsyncSession = Depends(get_db)):
+async def create_watchlist(
+    payload: CreateWatchlistRequest,
+    user: Optional[User] = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db)
+):
     """Create a new watchlist."""
-    new_w = Watchlist(name=payload.name, description=payload.description)
+    user_id_val = user.id if user else None
+    new_w = Watchlist(name=payload.name, description=payload.description, user_id=user_id_val)
     db.add(new_w)
     await db.commit()
     await db.refresh(new_w)
-    return {"id": new_w.id, "name": new_w.name, "description": new_w.description}
+    return {"id": new_w.id, "name": new_w.name, "description": new_w.description, "user_id": new_w.user_id}
 
 @router.get("/{watchlist_id}")
 async def get_watchlist_details(watchlist_id: str, db: AsyncSession = Depends(get_db)):
@@ -118,8 +137,9 @@ async def remove_stock_from_watchlist(watchlist_id: str, symbol: str, db: AsyncS
 @router.get("/{watchlist_id}/intelligence")
 async def get_watchlist_intelligence(
     watchlist_id: str,
-    user_id: str = "default_user",
+    user_id: Optional[str] = Query(None, description="Optional user_id query param"),
     since_minutes_ago: Optional[int] = Query(None, description="Optional override to simulate time away in minutes"),
+    user: Optional[User] = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -131,6 +151,9 @@ async def get_watchlist_intelligence(
     3. Anomaly and Breakout signals
     4. Executive AI narrative digest
     """
+    # Resolve target user_id for checkpoint reference
+    effective_user_id = (user.id if user else None) or user_id or "default_user"
+
     # 1. Fetch watchlist items
     items_res = await db.execute(
         select(WatchlistItem).filter(WatchlistItem.watchlist_id == watchlist_id)
@@ -143,7 +166,7 @@ async def get_watchlist_intelligence(
     # 2. Determine reference time (Last Checkpoint)
     current_time = market_service.get_current_virtual_time()
     session_res = await db.execute(
-        select(UserSession).filter(UserSession.user_id == user_id)
+        select(UserSession).filter(UserSession.user_id == effective_user_id)
     )
     session = session_res.scalars().first()
     
@@ -247,18 +270,24 @@ async def get_watchlist_intelligence(
     }
 
 @router.post("/checkpoint")
-async def save_user_checkpoint(user_id: str = "default_user", db: AsyncSession = Depends(get_db)):
-    """Saves the current moment as the user's 'last seen' checkpoint."""
+async def save_user_checkpoint(
+    user_id: Optional[str] = Query(None),
+    user: Optional[User] = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Saves the current moment as the user's 'last seen' checkpoint in Neon DB."""
+    effective_user_id = (user.id if user else None) or user_id or "default_user"
     current_time = market_service.get_current_virtual_time()
-    res = await db.execute(select(UserSession).filter(UserSession.user_id == user_id))
+    res = await db.execute(select(UserSession).filter(UserSession.user_id == effective_user_id))
     session = res.scalars().first()
     if not session:
-        session = UserSession(user_id=user_id, last_visited_at=current_time)
+        session = UserSession(user_id=effective_user_id, last_visited_at=current_time)
         db.add(session)
     else:
         session.last_visited_at = current_time
     await db.commit()
     return {
         "status": "checkpoint_saved",
+        "user_id": effective_user_id,
         "last_visited_at": current_time.isoformat()
     }

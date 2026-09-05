@@ -25,12 +25,21 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
     );
   }
 
-  // Determine scale boundaries
+  // Determine scale boundaries - dynamically include referencePrice so checkpoint line never flies off the SVG
   const allHighs = candles.map(c => c.high);
   const allLows = candles.map(c => c.low);
-  const maxPrice = Math.max(...allHighs);
-  const minPrice = Math.min(...allLows);
-  const priceRange = (maxPrice - minPrice) || 1.0;
+  if (referencePrice) {
+    allHighs.push(referencePrice);
+    allLows.push(referencePrice);
+  }
+  const rawMax = Math.max(...allHighs);
+  const rawMin = Math.min(...allLows);
+  const rawRange = (rawMax - rawMin) || 1.0;
+  
+  // Add 4% vertical breathing room so neither wicks nor checkpoint line clip at edges
+  const maxPrice = rawMax + rawRange * 0.04;
+  const minPrice = rawMin - rawRange * 0.04;
+  const priceRange = maxPrice - minPrice;
 
   const width = 800;
   const paddingLeft = 10;
@@ -43,7 +52,8 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
   const barWidth = Math.max(3, (chartWidth / candles.length) * 0.7);
 
   const getY = (price: number) => {
-    return height - paddingBottom - ((price - minPrice) / priceRange) * chartHeight;
+    const rawY = height - paddingBottom - ((price - minPrice) / priceRange) * chartHeight;
+    return Math.max(paddingTop + 2, Math.min(height - paddingBottom - 2, rawY));
   };
 
   // Max volume for volume bars at bottom
@@ -143,29 +153,43 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
           })}
 
           {/* Reference Price Baseline (Checkpoint Time / Last Seen) */}
-          {referencePrice && (
-            <g>
-              <line
-                x1={paddingLeft}
-                y1={getY(referencePrice)}
-                x2={width - paddingRight}
-                y2={getY(referencePrice)}
-                stroke="var(--groww-amber)"
-                strokeDasharray="4 4"
-                strokeWidth="1.5"
-                opacity="0.8"
-              />
-              <text
-                x={paddingLeft + 6}
-                y={getY(referencePrice) - 6}
-                fill="var(--groww-amber)"
-                fontSize="9"
-                fontWeight="bold"
-              >
-                LAST CHECKPOINT (₹{referencePrice.toFixed(1)})
-              </text>
-            </g>
-          )}
+          {referencePrice && (() => {
+            const refY = getY(referencePrice);
+            const textY = refY <= paddingTop + 12 ? refY + 12 : refY - 5;
+            return (
+              <g>
+                <line
+                  x1={paddingLeft}
+                  y1={refY}
+                  x2={width - paddingRight}
+                  y2={refY}
+                  stroke="var(--groww-amber)"
+                  strokeDasharray="4 4"
+                  strokeWidth="1.5"
+                  opacity="0.85"
+                />
+                <rect
+                  x={paddingLeft + 4}
+                  y={textY - 9}
+                  width="180"
+                  height="13"
+                  fill="var(--bg-card)"
+                  opacity="0.85"
+                  rx="2"
+                />
+                <text
+                  x={paddingLeft + 6}
+                  y={textY}
+                  fill="var(--groww-amber)"
+                  fontSize="9"
+                  fontWeight="bold"
+                  fontFamily="Inter, sans-serif"
+                >
+                  LAST CHECKPOINT (₹{referencePrice.toFixed(1)})
+                </text>
+              </g>
+            );
+          })()}
 
           {/* Volume Bars at Bottom (Individual Green / Red Bars) */}
           {candles.map((c, i) => {

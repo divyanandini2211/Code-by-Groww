@@ -10,10 +10,18 @@ export interface Stock {
   fifty_two_week_low: number;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  last_checkpoint?: string;
+}
+
 export interface Watchlist {
   id: string;
   name: string;
   description?: string;
+  user_id?: string;
   created_at?: string;
 }
 

@@ -54,6 +54,7 @@ class Watchlist(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(100), nullable=False)
     description = Column(String(255), nullable=True)
+    user_id = Column(String(50), nullable=True, index=True) # Scoped to user if authenticated
     created_at = Column(DateTime(timezone=True), default=utcnow)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -73,6 +74,29 @@ class WatchlistItem(Base):
     __table_args__ = (
         UniqueConstraint("watchlist_id", "symbol", name="uq_watchlist_stock"),
     )
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String(120), unique=True, index=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    sessions = relationship("UserAuthToken", back_populates="user", cascade="all, delete-orphan")
+
+class UserAuthToken(Base):
+    __tablename__ = "user_auth_tokens"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    token = Column(String(64), unique=True, index=True, nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    user = relationship("User", back_populates="sessions")
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
