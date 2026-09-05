@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -159,34 +160,57 @@ async def get_watchlist_intelligence(
         reference_time = current_time - pd.Timedelta(minutes=30)
         away_duration_str = "30 minutes"
 
-    # 3. Calculate Insights per stock
-    insights = []
+    # 3. Calculate Insights per stock using batch queries (Zero N+1 DB roundtrips)
     stocks_res = await db.execute(select(Stock).filter(Stock.symbol.in_(symbols)))
     stocks = stocks_res.scalars().all()
 
+    # Bulk fetch reference ticks
+    ref_subq = (
+        select(
+            StockTick.symbol,
+            StockTick.close,
+            func.row_number().over(
+                partition_by=StockTick.symbol,
+                order_by=StockTick.timestamp.desc()
+            ).label("rn")
+        )
+        .filter(StockTick.symbol.in_(symbols), StockTick.timestamp <= reference_time)
+        .subquery()
+    )
+    ref_ticks_res = await db.execute(
+        select(ref_subq.c.symbol, ref_subq.c.close).filter(ref_subq.c.rn == 1)
+    )
+    ref_prices = dict(ref_ticks_res.all())
+
+    # Bulk fetch recent ticks (last 20 per stock)
+    recent_subq = (
+        select(
+            StockTick.symbol,
+            StockTick.volume,
+            func.row_number().over(
+                partition_by=StockTick.symbol,
+                order_by=StockTick.timestamp.desc()
+            ).label("rn")
+        )
+        .filter(StockTick.symbol.in_(symbols), StockTick.timestamp <= current_time)
+        .subquery()
+    )
+    recent_ticks_res = await db.execute(
+        select(recent_subq.c.symbol, recent_subq.c.volume, recent_subq.c.rn)
+        .filter(recent_subq.c.rn <= 20)
+    )
+    
+    recent_volumes = {}
+    for sym_val, vol_val, _ in recent_ticks_res.all():
+        recent_volumes.setdefault(sym_val, []).append(vol_val)
+
+    insights = []
     for s in stocks:
-        # Get reference tick at or closest before reference_time
-        ref_res = await db.execute(
-            select(StockTick)
-            .filter(StockTick.symbol == s.symbol, StockTick.timestamp <= reference_time)
-            .order_by(StockTick.timestamp.desc())
-            .limit(1)
-        )
-        ref_tick = ref_res.scalars().first()
-        ref_price = ref_tick.close if ref_tick else s.previous_close
+        ref_price = ref_prices.get(s.symbol, s.previous_close)
+        vols = recent_volumes.get(s.symbol, [1000.0])
+        curr_vol = vols[0] if vols else 1000.0
+        avg_vol_1m = sum(vols) / max(1, len(vols))
 
-        # Get latest tick volume & 20-min rolling avg volume
-        latest_tick_res = await db.execute(
-            select(StockTick)
-            .filter(StockTick.symbol == s.symbol, StockTick.timestamp <= current_time)
-            .order_by(StockTick.timestamp.desc())
-            .limit(20)
-        )
-        recent_ticks = latest_tick_res.scalars().all()
-        curr_vol = recent_ticks[0].volume if recent_ticks else 1000.0
-        avg_vol_1m = sum(t.volume for t in recent_ticks) / max(1, len(recent_ticks))
-
-        # Run through ML Attention Engine
         analysis = ml_engine.calculate_attention_score(
             current_price=s.current_price,
             reference_price=ref_price,
