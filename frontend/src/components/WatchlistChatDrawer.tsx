@@ -246,10 +246,19 @@ export const WatchlistChatDrawer: React.FC<WatchlistChatDrawerProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 768);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleOpen = () => {
     setIsOpen(true);
@@ -467,30 +476,35 @@ export const WatchlistChatDrawer: React.FC<WatchlistChatDrawerProps> = ({
         </div>
       )}
 
-      {/* Expanded Chat Drawer with Cartoon Expand / Shrink Anchored to Sidebar */}
+      {/* Expanded Chat Drawer with Cartoon Expand / Shrink Anchored to Sidebar or Centered on Mobile */}
       {(isOpen || isClosing) && (
-        <div style={{
-          position: 'fixed',
-          bottom: '24px',
-          left: `${leftOffset}px`,
-          width: '390px',
-          maxWidth: 'calc(100vw - 48px)',
-          height: '540px',
-          maxHeight: 'calc(100vh - 48px)',
-          background: 'rgba(22, 27, 38, 0.96)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '12px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.75)',
-          display: 'flex',
-          flexDirection: 'column',
-          zIndex: 1001,
-          overflow: 'hidden',
-          animation: isClosing
-            ? 'cartoonShrinkLeft 0.26s cubic-bezier(0.4, 0, 0.2, 1) forwards'
-            : 'cartoonExpandLeft 0.48s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
-          transformOrigin: 'bottom left'
-        }}>
+        <div 
+          className="watchlist-chat-drawer"
+          style={{
+            position: 'fixed',
+            bottom: isMobile ? '16px' : '24px',
+            left: isMobile ? '12px' : `${leftOffset}px`,
+            right: isMobile ? '12px' : 'auto',
+            margin: isMobile ? '0 auto' : '0',
+            width: isMobile ? 'min(420px, calc(100vw - 24px))' : '390px',
+            maxWidth: 'calc(100vw - 24px)',
+            height: isMobile ? '520px' : '540px',
+            maxHeight: isMobile ? 'calc(100vh - 32px)' : 'calc(100vh - 48px)',
+            background: 'rgba(22, 27, 38, 0.96)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 1001,
+            overflow: 'hidden',
+            animation: isClosing
+              ? (isMobile ? 'cartoonShrinkCenter 0.26s cubic-bezier(0.4, 0, 0.2, 1) forwards' : 'cartoonShrinkLeft 0.26s cubic-bezier(0.4, 0, 0.2, 1) forwards')
+              : (isMobile ? 'cartoonExpandCenter 0.48s cubic-bezier(0.34, 1.56, 0.64, 1) forwards' : 'cartoonExpandLeft 0.48s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'),
+            transformOrigin: isMobile ? 'bottom center' : 'bottom left'
+          }}
+        >
           {/* Header */}
           <div style={{
             padding: '12px 16px',

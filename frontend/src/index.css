@@ -211,6 +211,46 @@ input:focus, select:focus {
   }
 }
 
+@keyframes cartoonExpandCenter {
+  0% {
+    opacity: 0;
+    transform: scale(0.12) translateY(80px);
+    filter: blur(3px);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.05) translateY(-10px);
+    filter: blur(0px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(0.98) translateY(3px);
+  }
+  88% {
+    opacity: 1;
+    transform: scale(1.01) translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes cartoonShrinkCenter {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.04) translateY(-6px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.1) translateY(80px);
+  }
+}
+
 @keyframes cartoonWiggle {
   0%, 100% {
     transform: translateY(0) rotate(0deg) scale(1);
@@ -300,14 +340,16 @@ input:focus, select:focus {
     flex-wrap: wrap !important;
   }
 
-  /* Watchlist AI Drawer fits mobile screens smoothly */
+  /* Watchlist AI Drawer pops up centered in mobile screens smoothly */
   .watchlist-chat-drawer {
-    width: calc(100vw - 20px) !important;
-    max-width: calc(100vw - 20px) !important;
-    left: 10px !important;
-    right: 10px !important;
-    bottom: 10px !important;
-    max-height: 80vh !important;
+    width: min(420px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important;
+    left: 12px !important;
+    right: 12px !important;
+    margin: 0 auto !important;
+    bottom: 16px !important;
+    max-height: calc(100vh - 32px) !important;
+    transform-origin: bottom center !important;
   }
 }
 
