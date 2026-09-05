@@ -1,0 +1,107 @@
+:root {
+  --bg-primary: #0e1118;
+  --bg-secondary: #161b26;
+  --bg-card: #1c2230;
+  --bg-hover: #252d3d;
+  --border-color: #2b3548;
+  
+  --text-primary: #f0f3f8;
+  --text-secondary: #9aa5b8;
+  --text-muted: #626e82;
+
+  --groww-green: #00D09C;
+  --groww-green-bg: rgba(0, 208, 156, 0.12);
+  --groww-red: #EB5B3C;
+  --groww-red-bg: rgba(235, 91, 60, 0.12);
+  --groww-blue: #5367FF;
+  --groww-amber: #FFB800;
+
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+input, select {
+  font-family: inherit;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px 12px;
+  outline: none;
+  font-size: 13px;
+}
+
+input:focus, select:focus {
+  border-color: var(--groww-green);
+}
+
+/* Utilities */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-green {
+  color: var(--groww-green);
+  background: var(--groww-green-bg);
+}
+
+.badge-red {
+  color: var(--groww-red);
+  background: var(--groww-red-bg);
+}
+
+.badge-amber {
+  color: var(--groww-amber);
+  background: rgba(255, 184, 0, 0.15);
+}
+
+.badge-blue {
+  color: var(--groww-blue);
+  background: rgba(83, 103, 255, 0.15);
+}
+
+/* Animations */
+@keyframes flashGreen {
+  0% { background-color: rgba(0, 208, 156, 0.3); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flashRed {
+  0% { background-color: rgba(235, 91, 60, 0.3); }
+  100% { background-color: transparent; }
+}
+
+.flash-up {
+  animation: flashGreen 1.2s ease-out;
+}
+
+.flash-down {
+  animation: flashRed 1.2s ease-out;
+}
