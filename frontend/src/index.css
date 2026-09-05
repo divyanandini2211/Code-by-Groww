@@ -134,3 +134,99 @@ input:focus, select:focus {
   background: var(--text-muted);
 }
 
+/* Cartoonish AI Box Expansion & Bubble Animations */
+@keyframes cartoonExpand {
+  0% {
+    opacity: 0;
+    transform: scale(0.12) translateY(80px) rotate(-6deg);
+    filter: blur(3px);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.07) translateY(-12px) rotate(2deg);
+    filter: blur(0px);
+  }
+  70% {
+    transform: scale(0.97) translateY(4px) rotate(-1deg);
+  }
+  88% {
+    transform: scale(1.02) translateY(-2px) rotate(0.5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0) rotate(0deg);
+  }
+}
+
+@keyframes cartoonShrink {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0) rotate(0deg);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.05) translateY(-8px) rotate(-2deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.1) translateY(80px) rotate(8deg);
+  }
+}
+
+@keyframes cartoonExpandLeft {
+  0% {
+    opacity: 0;
+    transform: scale(0.12) translateY(80px) rotate(6deg);
+    filter: blur(3px);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1.07) translateY(-12px) rotate(-2deg);
+    filter: blur(0px);
+  }
+  70% {
+    transform: scale(0.97) translateY(4px) rotate(1deg);
+  }
+  88% {
+    transform: scale(1.02) translateY(-2px) rotate(-0.5deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0) rotate(0deg);
+  }
+}
+
+@keyframes cartoonShrinkLeft {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0) rotate(0deg);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.05) translateY(-8px) rotate(2deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.1) translateY(80px) rotate(-8deg);
+  }
+}
+
+@keyframes cartoonWiggle {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  20% {
+    transform: translateY(-5px) rotate(-4deg) scale(1.05);
+  }
+  40% {
+    transform: translateY(-2px) rotate(3deg) scale(1.02);
+  }
+  60% {
+    transform: translateY(-6px) rotate(-3deg) scale(1.06);
+  }
+  80% {
+    transform: translateY(-1px) rotate(1deg) scale(1.01);
+  }
+}
+
+

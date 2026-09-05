@@ -1,4 +1,8 @@
-const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || (
+  typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? `${window.location.origin}/api/v1`
+    : 'http://127.0.0.1:8000/api/v1'
+);
 
 const getAuthHeaders = (): HeadersInit => {
   const token = localStorage.getItem('groww_auth_token');
@@ -13,20 +17,29 @@ const getAuthHeaders = (): HeadersInit => {
 
 export const api = {
   // Auth & Session Endpoints
-  register: async (name: string, email: string, password: string) => {
+  checkUsername: async (username: string): Promise<{ available: boolean; reason: string }> => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/check-username?username=${encodeURIComponent(username)}`);
+      return res.json();
+    } catch (e) {
+      return { available: false, reason: 'Network error checking username' };
+    }
+  },
+
+  register: async (name: string, email: string, password: string, username: string) => {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, username }),
     });
     return res.json();
   },
 
-  login: async (email: string, password: string) => {
+  login: async (identifier: string, password: string) => {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, email: identifier, password }),
     });
     return res.json();
   },
@@ -90,7 +103,7 @@ export const api = {
   addStockToWatchlist: async (watchlistId: string, symbol: string) => {
     const res = await fetch(`${API_BASE}/watchlists/${watchlistId}/stocks`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ symbol }),
     });
     return res.json();
@@ -99,6 +112,7 @@ export const api = {
   removeStockFromWatchlist: async (watchlistId: string, symbol: string) => {
     const res = await fetch(`${API_BASE}/watchlists/${watchlistId}/stocks/${symbol}`, {
       method: 'DELETE',
+      headers: getAuthHeaders(),
     });
     return res.json();
   },
@@ -109,6 +123,22 @@ export const api = {
       : `${API_BASE}/watchlists/${watchlistId}/intelligence`;
     const res = await fetch(url, {
       headers: getAuthHeaders(),
+    });
+    return res.json();
+  },
+
+  sendWatchlistChatMessage: async (
+    watchlistId: string,
+    message: string,
+    history?: Array<{ role: string; text: string }>
+  ) => {
+    const res = await fetch(`${API_BASE}/watchlists/${watchlistId}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ message, history }),
     });
     return res.json();
   },

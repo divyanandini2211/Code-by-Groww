@@ -3,16 +3,19 @@ import {
   TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
   Search, CheckCircle2, ChevronRight, Zap, RefreshCw,
   PanelLeftClose, PanelLeftOpen, List, User as UserIcon, LogIn, LogOut, ShieldCheck,
-  Gauge, FastForward, Play, AlertCircle, Home, Cpu, ArrowRight
+  Gauge, FastForward, Play, AlertCircle, Home, Cpu, ArrowRight, Bot
 } from 'lucide-react';
 import { api } from './services/api';
 import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle, User } from './types';
 import { DetailedChart } from './components/DetailedChart';
+import { WatchlistChatDrawer } from './components/WatchlistChatDrawer';
+import { PixelCanvas } from './components/ui/pixel-canvas';
 import { useMarketWebSocket } from './hooks/useMarketWebSocket';
 
 export function App() {
   // Navigation View: 'HOME' (Landing / Marketing page) | 'DASHBOARD' (Live Trading Terminal)
-  const [currentView, setCurrentView] = useState<'HOME' | 'DASHBOARD'>('DASHBOARD');
+  // Default is HOME — user must authenticate before accessing DASHBOARD
+  const [currentView, setCurrentView] = useState<'HOME' | 'DASHBOARD'>('HOME');
 
   // Resizable Panel Widths (like VS Code) & Collapsible Sidebar
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -27,6 +30,9 @@ export function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   const [authName, setAuthName] = useState('');
+  const [authUsername, setAuthUsername] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
+  const [usernameMsg, setUsernameMsg] = useState('');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -37,6 +43,41 @@ export function App() {
   const [showSimPromptModal, setShowSimPromptModal] = useState(false);
   const [simSpeed, setSimSpeed] = useState<number>(1.0);
   const [simDate, setSimDate] = useState<string>('Sep 04, 2026');
+
+  // "Try Me" AI Copilot Modal State & Timers (10s delay / 1 hour cooldown)
+  const [showTryMeModal, setShowTryMeModal] = useState(false);
+  const [forceChatOpenKey, setForceChatOpenKey] = useState(0);
+  const tryMeTimerRef = useRef<number | null>(null);
+
+  // Check if "Try Me" popup is eligible (ONCE per user, minimum 1 hour cooldown)
+  const isTryMeEligible = (userId?: string): boolean => {
+    if (!userId) return false;
+    const lastShownStr = localStorage.getItem(`groww_try_me_last_shown_${userId}`);
+    if (!lastShownStr) return true;
+    const lastShown = parseInt(lastShownStr, 10);
+    if (isNaN(lastShown)) return true;
+    const oneHourMs = 60 * 60 * 1000;
+    return Date.now() - lastShown >= oneHourMs;
+  };
+
+  // Schedules the "Try Me" popup to appear 10 seconds later
+  const scheduleTryMePopup = (userId?: string) => {
+    if (!userId || !isTryMeEligible(userId)) return;
+    if (tryMeTimerRef.current) {
+      clearTimeout(tryMeTimerRef.current);
+    }
+    tryMeTimerRef.current = window.setTimeout(() => {
+      setShowTryMeModal(true);
+      localStorage.setItem(`groww_try_me_last_shown_${userId}`, Date.now().toString());
+    }, 10000); // 10 seconds
+  };
+
+  const handleCloseSimPrompt = () => {
+    setShowSimPromptModal(false);
+    if (currentUser) {
+      scheduleTryMePopup(currentUser.id);
+    }
+  };
 
   // State
   const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
@@ -49,7 +90,6 @@ export function App() {
   // Controls & Optimizations
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Stock[]>([]);
-  const [sinceMinutes, setSinceMinutes] = useState<number>(45);
   const [isSwitching, setIsSwitching] = useState(false);
   const [newWatchlistName, setNewWatchlistName] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -153,14 +193,97 @@ export function App() {
     loadInitialData();
   }, []);
 
+  // Live Unique Username Verification Debounce
+  useEffect(() => {
+    if (authMode !== 'REGISTER') {
+      setUsernameStatus('idle');
+      setUsernameMsg('');
+      return;
+    }
+
+    const clean = authUsername.trim().toLowerCase();
+    if (!clean) {
+      setUsernameStatus('idle');
+      setUsernameMsg('');
+      return;
+    }
+
+    if (clean.length < 3) {
+      setUsernameStatus('invalid');
+      setUsernameMsg('Must be at least 3 characters');
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]+$/.test(clean)) {
+      setUsernameStatus('invalid');
+      setUsernameMsg('Letters, numbers, and _ only');
+      return;
+    }
+
+    setUsernameStatus('checking');
+    setUsernameMsg('Verifying uniqueness...');
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.checkUsername(clean);
+        if (res.available) {
+          setUsernameStatus('available');
+          setUsernameMsg('Username is available');
+        } else {
+          setUsernameStatus('taken');
+          setUsernameMsg(res.reason || 'Username is already taken');
+        }
+      } catch (err) {
+        setUsernameStatus('idle');
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [authUsername, authMode]);
+
+  // Auto-track away window for account:
+  // Auto-saves timestamp checkpoint when user leaves/minimizes tab or closes window,
+  // and auto-recalculates intelligence with exact away duration when they return.
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'hidden') {
+        if (currentUser?.id) {
+          try {
+            await api.saveCheckpoint(currentUser.id);
+          } catch (e) {}
+        }
+      } else if (document.visibilityState === 'visible') {
+        if (selectedWatchlistId) {
+          loadIntelligence(selectedWatchlistId);
+        }
+      }
+    };
+
+    const handleBeforeUnload = () => {
+      if (currentUser?.id) {
+        const token = localStorage.getItem('groww_auth_token');
+        if (token && navigator.sendBeacon) {
+          navigator.sendBeacon('/api/v1/watchlists/checkpoint');
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [currentUser?.id, selectedWatchlistId]);
+
   // Watchlist selection: Clear display immediately and show loading indicator
   useEffect(() => {
     if (selectedWatchlistId) {
       setIsSwitching(true);
       setIntelligence(null);
-      loadIntelligence(selectedWatchlistId, sinceMinutes);
+      loadIntelligence(selectedWatchlistId);
     }
-  }, [selectedWatchlistId, sinceMinutes]);
+  }, [selectedWatchlistId]);
 
   // Stock selection with instant cache preview
   useEffect(() => {
@@ -232,20 +355,33 @@ export function App() {
         setSimSpeed(status.simulation_speed);
       }
 
-      // If user is already logged in or logs in, and market is closed, offer simulation prompt
+      // If user is already logged in or logs in, and market is closed, offer simulation prompt every time
       if (status.status === 'CLOSED') {
-        const hasPrompted = sessionStorage.getItem('groww_sim_prompt_shown');
-        if (!hasPrompted && user) {
+        if (user) {
           setShowSimPromptModal(true);
-          sessionStorage.setItem('groww_sim_prompt_shown', 'true');
+        }
+      } else {
+        // Between market trading time - market closed prompt doesn't come up, schedule Try Me popup directly!
+        if (user) {
+          scheduleTryMePopup(user.id);
         }
       }
 
-      const lists = await api.getWatchlists();
-      setWatchlists(lists);
-      if (lists.length > 0) {
-        const defaultW = lists.find((l: Watchlist) => l.name.includes('Flagship')) || lists[0];
-        setSelectedWatchlistId(defaultW.id);
+      // Only load watchlists if user is authenticated
+      if (user) {
+        const lists = await api.getWatchlists();
+        setWatchlists(lists);
+        if (lists.length > 0) {
+          const defaultW = lists.find((l: Watchlist) => l.name.includes('Flagship')) || lists[0];
+          setSelectedWatchlistId(defaultW.id);
+        }
+        // Authenticated user goes straight to dashboard
+        setCurrentView('DASHBOARD');
+      } else {
+        // No session found — auto-prompt registration
+        setAuthMode('REGISTER');
+        setAuthError('');
+        setShowAuthModal(true);
       }
     } catch (e) {
       console.error(e);
@@ -260,7 +396,23 @@ export function App() {
     try {
       let res;
       if (authMode === 'REGISTER') {
-        res = await api.register(authName, authEmail, authPassword);
+        const uClean = authUsername.trim().toLowerCase();
+        if (!uClean) {
+          setAuthError('Please choose a username');
+          setIsAuthLoading(false);
+          return;
+        }
+        if (usernameStatus === 'taken') {
+          setAuthError('Username is already taken. Please choose another.');
+          setIsAuthLoading(false);
+          return;
+        }
+        if (usernameStatus === 'invalid' || uClean.length < 3) {
+          setAuthError('Username must be 3-30 characters (letters, numbers, underscores only)');
+          setIsAuthLoading(false);
+          return;
+        }
+        res = await api.register(authName, authEmail, authPassword, uClean);
       } else {
         res = await api.login(authEmail, authPassword);
       }
@@ -276,14 +428,20 @@ export function App() {
         // If market is down when user logs in, show prompt immediately!
         if (marketStatus?.status === 'CLOSED') {
           setShowSimPromptModal(true);
+        } else {
+          // Market is open / trading hours - market closed prompt doesn't come up, schedule Try Me directly!
+          scheduleTryMePopup(res.user.id);
         }
 
-        // Refresh watchlists for user
+        // Refresh watchlists for user and auto-select the first one
         const userLists = await api.getWatchlists();
         setWatchlists(userLists);
         cacheRef.current = {};
-        if (selectedWatchlistId) {
-          loadIntelligence(selectedWatchlistId, sinceMinutes);
+        if (userLists.length > 0) {
+          const defaultW = userLists.find((l: Watchlist) => l.name.includes('Flagship')) || userLists[0];
+          setSelectedWatchlistId(defaultW.id);
+        } else if (selectedWatchlistId) {
+          loadIntelligence(selectedWatchlistId);
         }
       } else {
         setAuthError(res.detail || 'Authentication failed. Check credentials.');
@@ -305,22 +463,27 @@ export function App() {
   };
 
   const handleLogout = async () => {
+    if (tryMeTimerRef.current) {
+      clearTimeout(tryMeTimerRef.current);
+      tryMeTimerRef.current = null;
+    }
+    setShowTryMeModal(false);
     await api.logout();
     setCurrentUser(null);
-    setCurrentView('HOME'); // Navigate directly to Home Page upon logout!
+    // Clear all user-specific state
+    setWatchlists([]);
+    setSelectedWatchlistId('');
+    setIntelligence(null);
     cacheRef.current = {};
-    const lists = await api.getWatchlists();
-    setWatchlists(lists);
-    if (selectedWatchlistId) {
-      loadIntelligence(selectedWatchlistId, sinceMinutes);
-    }
+    historyCacheRef.current = {};
+    setCurrentView('HOME'); // Navigate to landing page on logout
   };
 
-  const loadIntelligence = async (watchlistId: string, mins: number) => {
+  const loadIntelligence = async (watchlistId: string) => {
     try {
-      const res = await api.getWatchlistIntelligence(watchlistId, mins);
+      const res = await api.getWatchlistIntelligence(watchlistId);
       setIntelligence(res);
-      cacheRef.current[`${watchlistId}_${mins}`] = res;
+      cacheRef.current[watchlistId] = res;
     } catch (e) {
       console.error(e);
     } finally {
@@ -362,15 +525,15 @@ export function App() {
     await api.addStockToWatchlist(selectedWatchlistId, symbol);
     setSearchQuery('');
     setSearchResults([]);
-    delete cacheRef.current[`${selectedWatchlistId}_${sinceMinutes}`];
-    loadIntelligence(selectedWatchlistId, sinceMinutes);
+    delete cacheRef.current[selectedWatchlistId];
+    loadIntelligence(selectedWatchlistId);
   };
 
   const handleRemoveStock = async (symbol: string) => {
     if (!selectedWatchlistId) return;
     await api.removeStockFromWatchlist(selectedWatchlistId, symbol);
-    delete cacheRef.current[`${selectedWatchlistId}_${sinceMinutes}`];
-    loadIntelligence(selectedWatchlistId, sinceMinutes);
+    delete cacheRef.current[selectedWatchlistId];
+    loadIntelligence(selectedWatchlistId);
   };
 
   const handleSaveCheckpoint = async () => {
@@ -379,13 +542,13 @@ export function App() {
       setCurrentUser({ ...currentUser, last_checkpoint: res.last_visited_at });
     }
     cacheRef.current = {};
-    loadIntelligence(selectedWatchlistId, sinceMinutes);
+    loadIntelligence(selectedWatchlistId);
   };
 
   const handleSimulateShock = async (symbol: string, shockPct: number) => {
     await api.simulateAnomaly(symbol, shockPct, 3.5);
     cacheRef.current = {};
-    loadIntelligence(selectedWatchlistId, sinceMinutes);
+    loadIntelligence(selectedWatchlistId);
     loadStockHistory(symbol);
   };
 
@@ -403,13 +566,81 @@ export function App() {
 
   // RENDER COMPONENT: The Smart Ranked Watchlist Table
   const renderWatchlistTable = () => (
-    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 700, fontSize: '12px' }}>Ranked Watchlist (Sorted by ML Attention Score)</span>
-        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          {isSwitching ? 'Evaluating...' : `${intelligence?.ranked_insights?.length || 0} Equities Monitored`}
+    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', minHeight: '380px', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+        <span style={{ fontWeight: 700, fontSize: '12px', flexShrink: 0 }}>Watchlist</span>
+
+        {/* Inline Search — lives right on the watchlist tab */}
+        <div style={{ position: 'relative', flex: 1, maxWidth: '220px' }}>
+          <Search size={12} color="var(--text-muted)" style={{ position: 'absolute', left: '8px', top: '8px', pointerEvents: 'none' }} />
+          <input
+            type="text"
+            placeholder="Search & add stock..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              paddingLeft: '26px',
+              paddingRight: '8px',
+              height: '28px',
+              fontSize: '11px',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)',
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
+          />
+          {searchResults.length > 0 && (
+            <div style={{
+              position: 'absolute',
+              top: '32px',
+              left: 0,
+              right: 0,
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.7)',
+              zIndex: 100,
+              maxHeight: '240px',
+              overflowY: 'auto'
+            }}>
+              {searchResults.map((s) => (
+                <div
+                  key={s.symbol}
+                  onMouseDown={(e) => { e.preventDefault(); handleAddStock(s.symbol); }}
+                  style={{
+                    padding: '8px 12px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    borderBottom: '1px solid var(--border-color)',
+                    transition: 'background 0.15s'
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-hover)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '12px' }}>{s.symbol}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.name}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontWeight: 600, fontSize: '11px', color: 'var(--text-secondary)' }}>₹{s.current_price}</span>
+                    <Plus size={13} color="var(--groww-green)" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
+          {isSwitching ? 'Loading...' : `${intelligence?.ranked_insights?.length || 0} stocks`}
         </span>
       </div>
+
 
       {isSwitching ? (
         <div style={{
@@ -422,8 +653,8 @@ export function App() {
           color: 'var(--text-secondary)'
         }}>
           <RefreshCw size={28} color="var(--groww-green)" className="spinner" />
-          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Loading Watchlist & Calculating ML Attention Scores...</div>
-          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching checkpoint deltas & volume surge multipliers</div>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Loading watchlist...</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching prices and change data</div>
         </div>
       ) : (
         <div style={{ overflowX: 'auto', flex: 1 }}>
@@ -431,10 +662,10 @@ export function App() {
             <thead>
               <tr style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', fontSize: '10px', textTransform: 'uppercase' }}>
                 <th style={{ padding: '8px 10px' }}>TICKER</th>
-                <th style={{ padding: '8px 10px' }}>LTP</th>
-                <th style={{ padding: '8px 10px' }}>SINCE LAST SEEN</th>
+                <th style={{ padding: '8px 10px' }}>PRICE</th>
+                <th style={{ padding: '8px 10px' }}>CHANGE</th>
                 <th style={{ padding: '8px 10px' }}>VOLUME</th>
-                <th style={{ padding: '8px 10px' }}>ATTENTION</th>
+                <th style={{ padding: '8px 10px' }}>SCORE</th>
                 <th style={{ padding: '8px 10px' }}>SIGNALS</th>
                 <th style={{ padding: '8px 10px', textAlign: 'right' }}>ACTION</th>
               </tr>
@@ -558,9 +789,9 @@ export function App() {
         height={350}
       />
 
-      {/* ML Evaluation Metrics Box */}
+      {/* Stock Metrics Box */}
       <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <div style={{ fontSize: '11px', fontWeight: 700 }}>ML ANOMALY EVALUATION MATRIX</div>
+        <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)' }}>STOCK METRICS</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '2px' }}>
           <div style={{ background: 'var(--bg-card)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Price at Checkpoint</div>
@@ -573,7 +804,7 @@ export function App() {
             </div>
           </div>
           <div style={{ background: 'var(--bg-card)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Attention Score</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Alert Score</div>
             <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '2px', color: 'var(--groww-green)' }}>
               {activeStockInfo.attention_score} / 1.0
             </div>
@@ -591,19 +822,36 @@ export function App() {
       height: '100%',
       width: '100%',
       overflowY: 'auto',
-      background: 'radial-gradient(ellipse at top, #111a28 0%, #0c1017 100%)',
-      color: 'var(--text-primary)'
+      background: '#090d14',
+      color: 'var(--text-primary)',
+      position: 'relative'
     }}>
+      {/* Interactive Glowing PixelCanvas Background from @componentry/pixel-canvas */}
+      <div style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: 'none',
+        opacity: 0.95
+      }}>
+        <PixelCanvas
+          variant="glow"
+          colors={["#22c55e", "#10b981", "#14b8a6", "#06b6d4"]}
+          gap={10}
+          speed={0.01}
+        />
+      </div>
+
       {/* Home Top Navigation */}
       <header style={{
         height: '62px',
-        borderBottom: '1px solid var(--border-color)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 32px',
-        background: 'rgba(12, 16, 23, 0.85)',
-        backdropFilter: 'blur(12px)',
+        background: 'rgba(10, 14, 22, 0.8)',
+        backdropFilter: 'blur(14px)',
         position: 'sticky',
         top: 0,
         zIndex: 50,
@@ -619,28 +867,18 @@ export function App() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <div
-            onClick={() => setShowSimPromptModal(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-              padding: '5px 12px',
-              borderRadius: '20px',
-              fontSize: '11px',
-              color: marketStatus?.status === 'OPEN' ? 'var(--groww-green)' : '#ffba00'
-            }}
-            title="Click to configure Market Simulation"
-          >
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }}></span>
-            <span>{marketStatus?.status === 'OPEN' ? 'Market Live' : `Simulation Replay: ${simDate}`}</span>
-          </div>
+
 
           <button
-            onClick={() => setCurrentView('DASHBOARD')}
+            onClick={() => {
+              if (currentUser) {
+                setCurrentView('DASHBOARD');
+              } else {
+                setAuthError('');
+                setAuthMode('LOGIN');
+                setShowAuthModal(true);
+              }
+            }}
             style={{
               background: 'transparent',
               color: 'var(--text-primary)',
@@ -698,7 +936,9 @@ export function App() {
 
       {/* Hero Section */}
       <section style={{
-        padding: '60px 24px 40px',
+        position: 'relative',
+        zIndex: 1,
+        padding: '70px 24px 44px',
         maxWidth: '1080px',
         margin: '0 auto',
         textAlign: 'center',
@@ -712,20 +952,21 @@ export function App() {
           display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
-          background: 'rgba(0, 210, 144, 0.1)',
-          border: '1px solid rgba(0, 210, 144, 0.25)',
+          background: 'rgba(0, 210, 144, 0.12)',
+          border: '1px solid rgba(0, 210, 144, 0.3)',
           padding: '6px 16px',
           borderRadius: '24px',
           fontSize: '12px',
           color: 'var(--groww-green)',
-          fontWeight: 600
+          fontWeight: 600,
+          backdropFilter: 'blur(8px)'
         }}>
-          <Sparkles size={14} /> Powered by Google Gemini & ML Attention Anomaly Engine
+          <Sparkles size={14} /> Real-time market intelligence for Indian equities
         </div>
 
         {/* Main Headline */}
         <h1 style={{
-          fontSize: '44px',
+          fontSize: '46px',
           fontWeight: 800,
           lineHeight: '1.2',
           letterSpacing: '-1.2px',
@@ -747,13 +988,21 @@ export function App() {
           lineHeight: '1.6',
           margin: 0
         }}>
-          Stop scanning through static ticker tables. Our multi-variate Isolation Forest anomaly engine detects sudden volume surges, tracks price departures from your checkpoints, and generates AI executive summaries in real-time.
+          See exactly what moved in your watchlist since you last checked — price changes, volume spikes, and breakout signals, all ranked by importance.
         </p>
 
         {/* Action Buttons */}
         <div style={{ display: 'flex', gap: '14px', marginTop: '12px' }}>
           <button
-            onClick={() => setCurrentView('DASHBOARD')}
+            onClick={() => {
+              if (currentUser) {
+                setCurrentView('DASHBOARD');
+              } else {
+                setAuthError('');
+                setAuthMode('LOGIN');
+                setShowAuthModal(true);
+              }
+            }}
             style={{
               background: 'var(--groww-green)',
               color: '#000',
@@ -769,149 +1018,80 @@ export function App() {
               boxShadow: '0 8px 24px rgba(0,208,156,0.35)'
             }}
           >
-            Launch Trading Terminal <ArrowRight size={16} color="#000" />
+            {currentUser ? 'Go to Dashboard' : 'Launch Trading Terminal'} <ArrowRight size={16} color="#000" />
           </button>
-
-          {!currentUser ? (
-            <button
-              onClick={() => {
-                setAuthError('');
-                setAuthMode('REGISTER');
-                setShowAuthModal(true);
-              }}
-              style={{
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                fontWeight: 600,
-                fontSize: '14px',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
-            >
-              Sign Up with Neon DB
-            </button>
-          ) : (
-            <button
-              onClick={() => setCurrentView('DASHBOARD')}
-              style={{
-                background: 'var(--bg-card)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border-color)',
-                fontWeight: 600,
-                fontSize: '14px',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                cursor: 'pointer'
-              }}
-            >
-              View My Watchlists
-            </button>
-          )}
-        </div>
-
-        {/* Real-Time Market Ticker Ribbon */}
-        <div style={{
-          width: '100%',
-          maxWidth: '920px',
-          marginTop: '32px',
-          background: 'rgba(22, 27, 38, 0.7)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '10px',
-          padding: '12px 20px',
-          display: 'flex',
-          justifyContent: 'space-around',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
-          {(intelligence?.ranked_insights?.slice(0, 5) || [
-            { symbol: 'RELIANCE', current_price: 1329.4, pct_change_since_seen: 0.12 },
-            { symbol: 'PAYTM', current_price: 1669.7, pct_change_since_seen: -1.2 },
-            { symbol: 'SUNPHARMA', current_price: 1901.9, pct_change_since_seen: 2.11 },
-            { symbol: 'TCS', current_price: 2323.3, pct_change_since_seen: -0.07 },
-            { symbol: 'HINDUNILVR', current_price: 1966.6, pct_change_since_seen: 0.69 }
-          ]).map((s) => (
-            <div key={s.symbol} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
-              <span style={{ fontWeight: 700 }}>{s.symbol}</span>
-              <span style={{ color: 'var(--text-secondary)' }}>₹{s.current_price.toFixed(1)}</span>
-              <span className={`badge ${s.pct_change_since_seen >= 0 ? 'badge-green' : 'badge-red'}`} style={{ fontSize: '10px', padding: '1px 5px' }}>
-                {s.pct_change_since_seen >= 0 ? '+' : ''}{s.pct_change_since_seen}%
-              </span>
-            </div>
-          ))}
         </div>
       </section>
 
       {/* 4 Feature Pillars */}
       <section style={{
+        position: 'relative',
+        zIndex: 1,
         maxWidth: '1080px',
         margin: '0 auto',
-        padding: '20px 24px 50px',
+        padding: '20px 24px 60px',
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
         gap: '16px'
       }}>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ background: 'rgba(22, 27, 38, 0.72)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(0,210,144,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--groww-green)' }}>
             <Sparkles size={18} />
           </div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>What Changed AI Digest</h3>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>What Changed Since You Left</h3>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            Generates executive natural language briefings for your away window with Google Gemini, highlighting key trends and abnormal surges.
+            A plain-English summary of everything that moved in your watchlist while you were away — biggest movers, volume spikes, breakouts.
           </p>
         </div>
 
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ background: 'rgba(22, 27, 38, 0.72)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(255,186,0,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--groww-amber)' }}>
             <Cpu size={18} />
           </div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>ML Attention Engine</h3>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Smart Ranking</h3>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            Multi-variate Isolation Forest calculates dynamic attention scores, sorting 30+ equities by volatility, volume surges, and order momentum.
+            Stocks are automatically ranked by how much they've moved — factoring in price change, volume activity, and volatility signals.
           </p>
         </div>
 
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ background: 'rgba(22, 27, 38, 0.72)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(0,180,216,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00b4d8' }}>
             <Gauge size={18} />
           </div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Market Replay & Simulation</h3>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Market Replay</h3>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            When exchanges are closed, replay full intraday sessions in real-time. Speed up safely up to 10x without event queue latency.
+            Markets closed? Replay the last trading session live, with adjustable speed up to 10x. Watch prices move in real-time.
           </p>
         </div>
 
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ background: 'rgba(22, 27, 38, 0.72)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(157,78,221,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9d4edd' }}>
             <ShieldCheck size={18} />
           </div>
-          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Neon DB Cloud Sync</h3>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Synced Across Devices</h3>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            Robust PostgreSQL serverless database persistence for user watchlists, checkpoint cursors, and custom portfolios across devices.
+            Your watchlists, checkpoints, and preferences are saved to the cloud and available anywhere you log in.
           </p>
         </div>
       </section>
 
       {/* Footer */}
       <footer style={{
+        position: 'relative',
+        zIndex: 1,
         marginTop: 'auto',
-        borderTop: '1px solid var(--border-color)',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
         padding: '16px 32px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         fontSize: '11px',
         color: 'var(--text-muted)',
-        background: 'var(--bg-secondary)',
+        background: 'rgba(10, 14, 22, 0.85)',
+        backdropFilter: 'blur(12px)',
         flexShrink: 0
       }}>
-        <span>© 2026 Groww Smart Watchlist • Powered by Google DeepMind ML & Neon DB</span>
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <span onClick={() => setCurrentView('DASHBOARD')} style={{ cursor: 'pointer', color: 'var(--groww-green)' }}>Launch Terminal</span>
-          <span onClick={() => setShowSimPromptModal(true)} style={{ cursor: 'pointer' }}>Market Simulation</span>
-        </div>
+        <span>© 2026 Groww Smart Watchlist</span>
       </footer>
     </div>
   );
@@ -919,7 +1099,7 @@ export function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg-primary)', userSelect: isDraggingLeft.current || isDraggingCenter.current ? 'none' : 'auto' }}>
       
-      {currentView === 'HOME' ? (
+      {currentView === 'HOME' || !currentUser ? (
         renderHomePage()
       ) : (
         <>
@@ -1014,59 +1194,8 @@ export function App() {
               </div>
             </div>
 
-        {/* Right: Search, Checkpoint, and User Profile */}
+        {/* Right: Checkpoint and User Profile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-
-          {/* Search Bar */}
-          <div style={{ position: 'relative', width: '240px' }}>
-            <Search size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '9px' }} />
-            <input
-              type="text"
-              placeholder="Search & add stock..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ width: '100%', paddingLeft: '30px', paddingRight: '10px', height: '32px' }}
-            />
-            {searchResults.length > 0 && (
-              <div style={{
-                position: 'absolute',
-                top: '38px',
-                left: 0,
-                right: 0,
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-                zIndex: 50,
-                maxHeight: '220px',
-                overflowY: 'auto'
-              }}>
-                {searchResults.map((s) => (
-                  <div
-                    key={s.symbol}
-                    onClick={() => handleAddStock(s.symbol)}
-                    style={{
-                      padding: '8px 12px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      borderBottom: '1px solid var(--border-color)'
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '12px' }}>{s.symbol}</div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.name}</div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontWeight: 600, fontSize: '12px' }}>₹{s.current_price}</span>
-                      <Plus size={14} color="var(--groww-green)" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
           {/* Checkpoint Button */}
           <button
@@ -1095,8 +1224,8 @@ export function App() {
                 {currentUser.name.charAt(0).toUpperCase()}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '11px', fontWeight: 600, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentUser.name}</span>
-                <span style={{ fontSize: '9px', color: 'var(--groww-green)' }}>Neon Session Active</span>
+                <span style={{ fontSize: '11px', fontWeight: 600, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentUser.name}</span>
+                <span style={{ fontSize: '9px', color: 'var(--groww-green)', fontWeight: 600 }}>@{currentUser.username || 'trader'}</span>
               </div>
               <button
                 onClick={handleLogout}
@@ -1273,6 +1402,19 @@ export function App() {
             })}
           </div>
 
+          {/* Real-time Watchlist AI Copilot Drawer - Placed Above DEMO CONTROLS */}
+          {selectedWatchlistId && (
+            <WatchlistChatDrawer
+              watchlistId={selectedWatchlistId}
+              watchlistName={watchlists.find(w => w.id === selectedWatchlistId)?.name || 'Active Watchlist'}
+              stocksCount={intelligence?.ranked_insights?.length || 0}
+              topStockSymbol={intelligence?.ranked_insights?.[0]?.symbol}
+              isSidebarCollapsed={isSidebarCollapsed}
+              leftOffset={isSidebarCollapsed ? 58 : leftWidth + 12}
+              forceOpenTrigger={forceChatOpenKey}
+            />
+          )}
+
           {/* Judge Demo Shock Controls (only show full when not collapsed) */}
           {!isSidebarCollapsed ? (
             <div style={{ padding: '12px', background: 'var(--bg-card)', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1352,19 +1494,23 @@ export function App() {
                 </div>
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Clock size={13} color="var(--text-muted)" />
-                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Away window:</span>
-                  <select
-                    value={sinceMinutes}
-                    onChange={(e) => setSinceMinutes(Number(e.target.value))}
-                    style={{ padding: '2px 6px', fontSize: '11px', height: '24px' }}
-                  >
-                    <option value={15}>15 mins</option>
-                    <option value={30}>30 mins</option>
-                    <option value={45}>45 mins</option>
-                    <option value={60}>1 hour</option>
-                    <option value={120}>2 hours</option>
-                  </select>
+                  <Clock size={12} color="var(--groww-green)" />
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Auto-tracked away:</span>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: 'var(--groww-green)',
+                    background: 'rgba(0, 208, 156, 0.1)',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(0, 208, 156, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px'
+                  }}>
+                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--groww-green)', display: 'inline-block' }} />
+                    {intelligence?.away_duration || 'Tracking active'}
+                  </span>
                 </div>
               </div>
 
@@ -1542,25 +1688,81 @@ export function App() {
 
             <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {authMode === 'REGISTER' && (
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Full Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Divya Nandini"
-                    value={authName}
-                    onChange={(e) => setAuthName(e.target.value)}
-                    style={{ width: '100%', height: '34px', fontSize: '12px' }}
-                  />
-                </div>
+                <>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Unique Username</label>
+                      {usernameStatus !== 'idle' && (
+                        <span style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          color: usernameStatus === 'available'
+                            ? 'var(--groww-green)'
+                            : usernameStatus === 'taken'
+                            ? 'var(--groww-red)'
+                            : usernameStatus === 'checking'
+                            ? 'var(--text-muted)'
+                            : 'var(--groww-amber)'
+                        }}>
+                          {usernameStatus === 'checking' && '⏳ Verifying...'}
+                          {usernameStatus === 'available' && '✓ Username available'}
+                          {usernameStatus === 'taken' && '✕ Username taken'}
+                          {usernameStatus === 'invalid' && `⚠ ${usernameMsg}`}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{
+                        position: 'absolute',
+                        left: '10px',
+                        top: '8px',
+                        fontSize: '12px',
+                        color: 'var(--text-muted)',
+                        fontWeight: 600
+                      }}>@</span>
+                      <input
+                        type="text"
+                        required
+                        placeholder="divya_trader"
+                        value={authUsername}
+                        onChange={(e) => setAuthUsername(e.target.value.toLowerCase().replace(/\s+/g, ''))}
+                        style={{
+                          width: '100%',
+                          height: '34px',
+                          fontSize: '12px',
+                          paddingLeft: '24px',
+                          borderColor: usernameStatus === 'available'
+                            ? 'var(--groww-green)'
+                            : usernameStatus === 'taken'
+                            ? 'var(--groww-red)'
+                            : undefined
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Full Name</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Divya Nandini"
+                      value={authName}
+                      onChange={(e) => setAuthName(e.target.value)}
+                      style={{ width: '100%', height: '34px', fontSize: '12px' }}
+                    />
+                  </div>
+                </>
               )}
 
               <div>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Email Address</label>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                  {authMode === 'LOGIN' ? 'Email or Username' : 'Email Address'}
+                </label>
                 <input
-                  type="email"
+                  type={authMode === 'LOGIN' ? 'text' : 'email'}
                   required
-                  placeholder="trader@groww.in"
+                  placeholder={authMode === 'LOGIN' ? 'trader@groww.in or username' : 'trader@groww.in'}
                   value={authEmail}
                   onChange={(e) => setAuthEmail(e.target.value)}
                   style={{ width: '100%', height: '34px', fontSize: '12px' }}
@@ -1581,10 +1783,14 @@ export function App() {
 
               <button
                 type="submit"
-                disabled={isAuthLoading}
+                disabled={isAuthLoading || (authMode === 'REGISTER' && (usernameStatus === 'taken' || usernameStatus === 'invalid'))}
                 style={{
-                  background: 'var(--groww-green)',
-                  color: '#000',
+                  background: (authMode === 'REGISTER' && (usernameStatus === 'taken' || usernameStatus === 'invalid'))
+                    ? 'var(--border-color)'
+                    : 'var(--groww-green)',
+                  color: (authMode === 'REGISTER' && (usernameStatus === 'taken' || usernameStatus === 'invalid'))
+                    ? 'var(--text-muted)'
+                    : '#000',
                   fontWeight: 700,
                   fontSize: '13px',
                   padding: '10px',
@@ -1603,7 +1809,7 @@ export function App() {
                 <span>
                   Don't have an account?{' '}
                   <b
-                    onClick={() => { setAuthMode('REGISTER'); setAuthError(''); }}
+                    onClick={() => { setAuthMode('REGISTER'); setAuthError(''); setUsernameStatus('idle'); setUsernameMsg(''); }}
                     style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
                   >
                     Register now
@@ -1613,7 +1819,7 @@ export function App() {
                 <span>
                   Already registered?{' '}
                   <b
-                    onClick={() => { setAuthMode('LOGIN'); setAuthError(''); }}
+                    onClick={() => { setAuthMode('LOGIN'); setAuthError(''); setUsernameStatus('idle'); setUsernameMsg(''); }}
                     style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
                   >
                     Sign in here
@@ -1676,7 +1882,7 @@ export function App() {
                 </div>
               </div>
               <button
-                onClick={() => setShowSimPromptModal(false)}
+                onClick={handleCloseSimPrompt}
                 style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '16px', fontWeight: 600, padding: '2px' }}
               >
                 ✕
@@ -1694,7 +1900,7 @@ export function App() {
               gap: '8px'
             }}>
               <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffc107', lineHeight: '1.3' }}>
-                "Market is down, use last ({simDate})'s data to simulate?"
+                Market is down, use last ({simDate})'s data to simulate?
               </div>
               <p style={{ margin: 0, fontSize: '12px', lineHeight: '1.45', color: 'var(--text-secondary)' }}>
                 Real-time trading hours have concluded. You can replay the full 1-minute historical intraday sequence from <b>{simDate}</b> to watch prices, candle charts, and ML attention signals update dynamically.
@@ -1790,7 +1996,7 @@ export function App() {
             <div style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>
               <button
                 type="button"
-                onClick={() => setShowSimPromptModal(false)}
+                onClick={handleCloseSimPrompt}
                 style={{
                   flex: 1,
                   background: 'var(--groww-green)',
@@ -1811,7 +2017,7 @@ export function App() {
 
               <button
                 type="button"
-                onClick={() => setShowSimPromptModal(false)}
+                onClick={handleCloseSimPrompt}
                 style={{
                   background: 'transparent',
                   color: 'var(--text-secondary)',
@@ -1824,6 +2030,130 @@ export function App() {
                 }}
               >
                 Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* "Try Me" AI Copilot Modal Popup (Pops up 10s after closing market closed prompt or 10s after login when market open; 1hr cooldown) */}
+      {showTryMeModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(5px)',
+          zIndex: 10001,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{
+            width: '420px',
+            maxWidth: '100%',
+            background: 'var(--bg-secondary)',
+            border: '1px solid rgba(0, 208, 156, 0.35)',
+            borderRadius: '14px',
+            padding: '24px',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.85), 0 0 30px rgba(0, 208, 156, 0.15)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            animation: 'cartoonExpand 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards'
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: 'rgba(0, 208, 156, 0.15)',
+                  border: '1px solid rgba(0, 208, 156, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Sparkles size={20} color="var(--groww-green)" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Try Watchlist AI! ✨
+                  </h3>
+                  <span style={{ fontSize: '11px', color: 'var(--groww-green)', fontWeight: 600 }}>
+                    Real-time Market Copilot
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTryMeModal(false)}
+                title="Close"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '2px 4px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Description */}
+            <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.5', color: 'var(--text-secondary)' }}>
+              Ask questions about your active watchlist in real-time — get instant breakdowns on volume surges, breakout signals, and 52-week levels.
+            </p>
+
+            {/* Action Buttons: Close + Try the AI Chatbot Now */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTryMeModal(false);
+                  setForceChatOpenKey(k => k + 1);
+                }}
+                style={{
+                  flex: 1,
+                  background: 'linear-gradient(135deg, #00d09c 0%, #00a87e 100%)',
+                  color: '#000',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  padding: '11px 16px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  border: 'none',
+                  boxShadow: '0 4px 14px rgba(0, 208, 156, 0.35)'
+                }}
+              >
+                <Bot size={15} color="#000" /> Try the AI Chatbot Now
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowTryMeModal(false)}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  padding: '11px 16px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Close
               </button>
             </div>
           </div>

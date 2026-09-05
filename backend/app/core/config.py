@@ -22,7 +22,8 @@ class Settings(BaseSettings):
     ANOMALY_THRESHOLD: float = 0.70
     
     class Config:
-        env_file = str(Path(__file__).resolve().parents[3] / ".env")
+        env_file = (".env", "../.env", "../../.env")
+        env_file_encoding = "utf-8"
         extra = "ignore"
 
 settings = Settings()

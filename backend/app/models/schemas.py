@@ -79,6 +79,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String(50), unique=True, index=True, nullable=True)
     email = Column(String(120), unique=True, index=True, nullable=False)
     name = Column(String(100), nullable=False)
     password_hash = Column(String(255), nullable=False)

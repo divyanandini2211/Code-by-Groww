@@ -3,15 +3,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime, timezone, timedelta
 import pandas as pd
 
 from app.core.database import get_db
 from app.models.schemas import Watchlist, WatchlistItem, Stock, StockTick, UserSession, User
-from app.core.auth import get_optional_user
+from app.core.auth import get_current_user
 from app.services.market_service import market_service
 from app.services.ml_engine import ml_engine
+from app.services.chat_service import watchlist_chat_service
 
 router = APIRouter()
 
@@ -22,22 +23,18 @@ class CreateWatchlistRequest(BaseModel):
 class AddStockRequest(BaseModel):
     symbol: str
 
+@router.get("", include_in_schema=False)
 @router.get("/")
 async def list_watchlists(
-    user: Optional[User] = Depends(get_optional_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all created watchlists, showing user's lists and public defaults."""
-    if user:
-        # Show watchlists created by user + default flagship ones
-        res = await db.execute(
-            select(Watchlist)
-            .filter((Watchlist.user_id == user.id) | (Watchlist.user_id == None))
-            .order_by(Watchlist.created_at.desc())
-        )
-    else:
-        res = await db.execute(select(Watchlist).order_by(Watchlist.created_at.desc()))
-    
+    """List watchlists belonging to the authenticated user only."""
+    res = await db.execute(
+        select(Watchlist)
+        .filter(Watchlist.user_id == user.id)
+        .order_by(Watchlist.created_at.desc())
+    )
     watchlists = res.scalars().all()
     return [
         {
@@ -50,27 +47,33 @@ async def list_watchlists(
         for w in watchlists
     ]
 
+@router.post("", include_in_schema=False)
 @router.post("/")
 async def create_watchlist(
     payload: CreateWatchlistRequest,
-    user: Optional[User] = Depends(get_optional_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new watchlist."""
-    user_id_val = user.id if user else None
-    new_w = Watchlist(name=payload.name, description=payload.description, user_id=user_id_val)
+    """Create a new watchlist tied to the authenticated user."""
+    new_w = Watchlist(name=payload.name, description=payload.description, user_id=user.id)
     db.add(new_w)
     await db.commit()
     await db.refresh(new_w)
     return {"id": new_w.id, "name": new_w.name, "description": new_w.description, "user_id": new_w.user_id}
 
 @router.get("/{watchlist_id}")
-async def get_watchlist_details(watchlist_id: str, db: AsyncSession = Depends(get_db)):
-    """Get watchlist with its contained stocks."""
+async def get_watchlist_details(
+    watchlist_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get watchlist with its contained stocks. Verifies ownership."""
     w_res = await db.execute(select(Watchlist).filter(Watchlist.id == watchlist_id))
     watchlist = w_res.scalars().first()
     if not watchlist:
         raise HTTPException(status_code=404, detail="Watchlist not found")
+    if watchlist.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied to this watchlist")
 
     items_res = await db.execute(
         select(WatchlistItem).filter(WatchlistItem.watchlist_id == watchlist_id)
@@ -102,8 +105,19 @@ async def get_watchlist_details(watchlist_id: str, db: AsyncSession = Depends(ge
     }
 
 @router.post("/{watchlist_id}/stocks")
-async def add_stock_to_watchlist(watchlist_id: str, payload: AddStockRequest, db: AsyncSession = Depends(get_db)):
-    """Add a stock to a watchlist."""
+async def add_stock_to_watchlist(
+    watchlist_id: str,
+    payload: AddStockRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Add a stock to a watchlist. Verifies user owns the watchlist."""
+    # Verify ownership
+    w_res = await db.execute(select(Watchlist).filter(Watchlist.id == watchlist_id))
+    watchlist = w_res.scalars().first()
+    if not watchlist or watchlist.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied to this watchlist")
+
     sym = payload.symbol.upper()
     stock_res = await db.execute(select(Stock).filter(Stock.symbol == sym))
     if not stock_res.scalars().first():
@@ -121,8 +135,19 @@ async def add_stock_to_watchlist(watchlist_id: str, payload: AddStockRequest, db
     return {"message": f"Added {sym} to watchlist"}
 
 @router.delete("/{watchlist_id}/stocks/{symbol}")
-async def remove_stock_from_watchlist(watchlist_id: str, symbol: str, db: AsyncSession = Depends(get_db)):
-    """Remove a stock from a watchlist."""
+async def remove_stock_from_watchlist(
+    watchlist_id: str,
+    symbol: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove a stock from a watchlist. Verifies user owns the watchlist."""
+    # Verify ownership
+    w_res = await db.execute(select(Watchlist).filter(Watchlist.id == watchlist_id))
+    watchlist = w_res.scalars().first()
+    if not watchlist or watchlist.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Access denied to this watchlist")
+
     sym = symbol.upper()
     res = await db.execute(
         select(WatchlistItem).filter_by(watchlist_id=watchlist_id, symbol=sym)
@@ -134,25 +159,18 @@ async def remove_stock_from_watchlist(watchlist_id: str, symbol: str, db: AsyncS
     await db.commit()
     return {"message": f"Removed {sym} from watchlist"}
 
-@router.get("/{watchlist_id}/intelligence")
-async def get_watchlist_intelligence(
+
+async def _compute_watchlist_insights(
     watchlist_id: str,
-    user_id: Optional[str] = Query(None, description="Optional user_id query param"),
-    since_minutes_ago: Optional[int] = Query(None, description="Optional override to simulate time away in minutes"),
-    user: Optional[User] = Depends(get_optional_user),
-    db: AsyncSession = Depends(get_db)
+    effective_user_id: str,
+    db: AsyncSession,
+    since_minutes_ago: Optional[int] = None
 ):
-    """
-    THE CORE HACKATHON FEATURE:
-    Calculates what has meaningfully changed since the user last checked.
-    Returns:
-    1. AI/ML Attention-ranked list of stocks
-    2. Exact Delta since last visit
-    3. Anomaly and Breakout signals
-    4. Executive AI narrative digest
-    """
-    # Resolve target user_id for checkpoint reference
-    effective_user_id = (user.id if user else None) or user_id or "default_user"
+    """Internal helper to calculate live watchlist delta, volume surges, and attention scores."""
+    w_res = await db.execute(select(Watchlist).filter(Watchlist.id == watchlist_id))
+    watchlist = w_res.scalars().first()
+    if not watchlist or watchlist.user_id != effective_user_id:
+        raise HTTPException(status_code=403, detail="Access denied to this watchlist")
 
     # 1. Fetch watchlist items
     items_res = await db.execute(
@@ -161,29 +179,44 @@ async def get_watchlist_intelligence(
     items = items_res.scalars().all()
     symbols = [item.symbol for item in items]
     if not symbols:
-        return {"insights": [], "ai_digest": "Watchlist is empty."}
+        return watchlist, [], [], "0 minutes", datetime.now(timezone.utc), datetime.now(timezone.utc)
 
-    # 2. Determine reference time (Last Checkpoint)
-    current_time = market_service.get_current_virtual_time()
+    # 2. Determine reference time (Auto-tracked Last Checkpoint)
     session_res = await db.execute(
         select(UserSession).filter(UserSession.user_id == effective_user_id)
     )
     session = session_res.scalars().first()
-    
-    if since_minutes_ago is not None:
-        # Override for testing/demo simulation
-        reference_time = current_time - pd.Timedelta(minutes=since_minutes_ago)
-        away_duration_str = f"{since_minutes_ago} minutes"
-    elif session and session.last_visited_at:
-        reference_time = session.last_visited_at
-        diff_mins = max(1, int((current_time - reference_time).total_seconds() / 60))
-        away_duration_str = f"{diff_mins} minutes"
-    else:
-        # Default to 30 mins ago
-        reference_time = current_time - pd.Timedelta(minutes=30)
-        away_duration_str = "30 minutes"
 
-    # 3. Calculate Insights per stock using batch queries (Zero N+1 DB roundtrips)
+    now_real = datetime.now(timezone.utc)
+    if since_minutes_ago is not None:
+        away_mins = since_minutes_ago
+    elif session and session.last_visited_at:
+        ref_real = session.last_visited_at
+        if ref_real.tzinfo is None:
+            ref_real = ref_real.replace(tzinfo=timezone.utc)
+        
+        real_diff_secs = (now_real - ref_real).total_seconds()
+        
+        # Guard against legacy virtual dates (Sep 04) or unrealistic future/past desyncs
+        if real_diff_secs < 0 or real_diff_secs > 86400 * 7 or ref_real.day == 4:
+            away_mins = 30
+        else:
+            # Realistic absence window (15 mins minimum so AI model has meaningful market data)
+            away_mins = max(15, min(180, int(real_diff_secs / 60)))
+    else:
+        away_mins = 30
+
+    current_time = market_service.get_current_virtual_time()
+    reference_time = current_time - pd.Timedelta(minutes=away_mins)
+
+    if away_mins < 60:
+        away_duration_str = f"{away_mins} minutes"
+    else:
+        hrs = away_mins // 60
+        mins = away_mins % 60
+        away_duration_str = f"{hrs}h {mins}m" if mins > 0 else f"{hrs} hour{'s' if hrs > 1 else ''}"
+
+    # 3. Calculate Insights per stock using batch queries
     stocks_res = await db.execute(select(Stock).filter(Stock.symbol.in_(symbols)))
     stocks = stocks_res.scalars().all()
 
@@ -258,7 +291,30 @@ async def get_watchlist_intelligence(
     # Sort descending by Attention Score
     insights.sort(key=lambda x: x["attention_score"], reverse=True)
 
-    # 4. Generate AI Digest
+    return watchlist, symbols, insights, away_duration_str, reference_time, current_time
+
+@router.get("/{watchlist_id}/intelligence")
+async def get_watchlist_intelligence(
+    watchlist_id: str,
+    since_minutes_ago: Optional[int] = Query(None, description="Optional override to simulate time away in minutes"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Calculates what has meaningfully changed since the user last checked.
+    Returns ranked insights and executive AI digest.
+    """
+    watchlist, symbols, insights, away_duration_str, reference_time, current_time = await _compute_watchlist_insights(
+        watchlist_id=watchlist_id,
+        effective_user_id=user.id,
+        db=db,
+        since_minutes_ago=since_minutes_ago
+    )
+
+    if not symbols:
+        return {"insights": [], "ai_digest": "Watchlist is empty."}
+
+    # Generate AI Digest
     ai_digest = await ml_engine.generate_ai_digest(insights, away_duration_str)
 
     return {
@@ -269,15 +325,53 @@ async def get_watchlist_intelligence(
         "ranked_insights": insights
     }
 
-@router.post("/checkpoint")
-async def save_user_checkpoint(
-    user_id: Optional[str] = Query(None),
-    user: Optional[User] = Depends(get_optional_user),
+class ChatMessageRequest(BaseModel):
+    message: str
+    history: Optional[List[Dict[str, str]]] = None
+
+@router.post("/{watchlist_id}/chat")
+async def chat_with_watchlist(
+    watchlist_id: str,
+    payload: ChatMessageRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Saves the current moment as the user's 'last seen' checkpoint in Neon DB."""
-    effective_user_id = (user.id if user else None) or user_id or "default_user"
-    current_time = market_service.get_current_virtual_time()
+    # Real-time AI Chat endpoint grounded in active watchlist with multi-layer guardrails
+    clean_msg = payload.message.strip()
+    if not clean_msg:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    watchlist, symbols, insights, away_duration_str, reference_time, current_time = await _compute_watchlist_insights(
+        watchlist_id=watchlist_id,
+        effective_user_id=user.id,
+        db=db
+    )
+
+    chat_result = await watchlist_chat_service.answer_watchlist_question(
+        query=clean_msg,
+        watchlist_name=watchlist.name,
+        insights=insights,
+        away_duration=away_duration_str,
+        history=payload.history
+    )
+
+    return {
+        "reply": chat_result["reply"],
+        "model_used": chat_result["model_used"],
+        "status": chat_result["status"],
+        "watchlist_id": watchlist_id,
+        "watchlist_name": watchlist.name,
+        "timestamp": current_time.isoformat()
+    }
+
+@router.post("/checkpoint")
+async def save_user_checkpoint(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Saves the current moment as the user last seen checkpoint in Neon DB
+    effective_user_id = user.id
+    current_time = datetime.now(timezone.utc)
     res = await db.execute(select(UserSession).filter(UserSession.user_id == effective_user_id))
     session = res.scalars().first()
     if not session:
