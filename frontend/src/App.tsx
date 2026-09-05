@@ -3,7 +3,7 @@ import {
   TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
   Search, CheckCircle2, ChevronRight, Zap, RefreshCw,
   PanelLeftClose, PanelLeftOpen, List, User as UserIcon, LogIn, LogOut, ShieldCheck,
-  Gauge, FastForward, Play, AlertCircle, Home, Cpu, ArrowRight, Bot
+  Gauge, FastForward, Play, AlertCircle, Home, Cpu, ArrowRight, Bot, Smartphone
 } from 'lucide-react';
 import { api } from './services/api';
 import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle, User } from './types';
@@ -1078,6 +1078,16 @@ export function App() {
             Your watchlists, checkpoints, and preferences are saved to the cloud and available anywhere you log in.
           </p>
         </div>
+
+        <div style={{ background: 'rgba(22, 27, 38, 0.72)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 8px 28px rgba(0, 0, 0, 0.35)' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(0, 208, 156, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--groww-green)' }}>
+            <Smartphone size={18} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Mobile Friendly</h3>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+            Responsive terminal interface optimized for smartphones and tablets. Monitor live changes, volume surges, and AI Copilot anywhere on the go.
+          </p>
+        </div>
       </section>
 
       {/* Footer */}
@@ -1109,7 +1119,7 @@ export function App() {
       ) : (
         <>
           {/* Top Header Bar */}
-          <header style={{
+          <header className="terminal-header" style={{
             height: '52px',
             borderBottom: '1px solid var(--border-color)',
             display: 'flex',
@@ -1268,10 +1278,10 @@ export function App() {
 
 
       {/* Main Resizable Splitter Layout (VS Code Style) */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+      <div className="terminal-layout" style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         
         {/* LEFT PANEL: Watchlists (Collapsible) */}
-        <aside style={{
+        <aside className="terminal-sidebar" style={{
           width: isSidebarCollapsed ? '48px' : `${leftWidth}px`,
           minWidth: isSidebarCollapsed ? '48px' : '170px',
           maxWidth: isSidebarCollapsed ? '48px' : '450px',
@@ -1355,7 +1365,7 @@ export function App() {
           )}
 
           {/* Watchlists List */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: isSidebarCollapsed ? '8px 4px' : '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div className="terminal-sidebar-list" style={{ flex: 1, overflowY: 'auto', padding: isSidebarCollapsed ? '8px 4px' : '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {watchlists.map((w) => {
               const isSelected = selectedWatchlistId === w.id;
               if (isSidebarCollapsed) {
@@ -1457,6 +1467,7 @@ export function App() {
 
         {/* DRAGGABLE DIVIDER 1 */}
         <div
+          className="terminal-resizer"
           onMouseDown={onMouseDownLeft}
           style={{
             width: '5px',
@@ -1473,10 +1484,10 @@ export function App() {
         />
 
         {/* WORKSPACE AREA: (Center: Table & AI Briefing | Right: Detailed Chart & Metrics) */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div className="terminal-workspace" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           
           {/* Section A: What Changed Executive Briefing + Ranked Watchlist Table */}
-          <div style={{
+          <div className="terminal-panel terminal-panel-table" style={{
             width: `${splitRatio}%`,
             minWidth: '320px',
             overflowY: 'auto',
@@ -1529,6 +1540,7 @@ export function App() {
 
           {/* DRAGGABLE DIVIDER 2 */}
           <div
+            className="terminal-resizer"
             onMouseDown={onMouseDownCenter}
             style={{
               width: '5px',
@@ -1545,7 +1557,7 @@ export function App() {
           />
 
           {/* Section B: Detailed Chart & ML Evaluation Matrix */}
-          <div style={{
+          <div className="terminal-panel terminal-panel-chart" style={{
             width: `${100 - splitRatio}%`,
             minWidth: '320px',
             overflowY: 'auto',
