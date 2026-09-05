@@ -20,7 +20,19 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [zoomRange, setZoomRange] = useState<number>(25); // Default zoomed-in to 25 candles for high clarity
 
-  if (!candles || candles.length === 0) {
+  // 1. Deduplicate and validate candles strictly by timestamp
+  const cleanedCandles = React.useMemo(() => {
+    if (!candles || candles.length === 0) return [];
+    const map = new Map<string, Candle>();
+    candles.forEach(c => {
+      if (c && c.timestamp && !isNaN(c.close) && c.close > 0) {
+        map.set(c.timestamp, c);
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  }, [candles]);
+
+  if (cleanedCandles.length === 0) {
     return (
       <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
         <Activity size={16} className="spinner" style={{ marginRight: '8px' }} /> Awaiting candle stream for {symbol}...
@@ -29,8 +41,8 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
   }
 
   // Zoomed slice of candles
-  const effectiveZoom = Math.min(candles.length, Math.max(10, zoomRange));
-  const visibleCandles = candles.slice(-effectiveZoom);
+  const effectiveZoom = Math.min(cleanedCandles.length, Math.max(10, zoomRange));
+  const visibleCandles = cleanedCandles.slice(-effectiveZoom);
 
   // SVG dimensions
   const svgWidth = 840;
@@ -62,9 +74,12 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
   }
 
   const rawRange = (rawMax - rawMin) || 1.0;
-  // 7% vertical breathing room so candles fill the price zone with high visibility
-  const maxPrice = rawMax + rawRange * 0.07;
-  const minPrice = rawMin - rawRange * 0.07;
+  // Dynamic minimum vertical breathing room: ensure at least 0.5% span so candles never flatten into 1px
+  const minSpan = Math.max(1.5, rawMin * 0.005);
+  const effectiveRange = Math.max(rawRange, minSpan);
+  const paddingSpan = effectiveRange * 0.08;
+  const maxPrice = rawMax + paddingSpan;
+  const minPrice = rawMin - paddingSpan;
   const priceRange = maxPrice - minPrice;
 
   // Y-coordinate mapping for price zone (Top 75%)
@@ -363,22 +378,26 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
             const closeY = getY(c.close);
 
             const bodyTop = Math.min(openY, closeY);
-            const bodyHeight = Math.max(2.5, Math.abs(openY - closeY));
+            const bodyHeight = Math.max(3.5, Math.abs(openY - closeY));
+
+            // Ensure wicks are always visually prominent and naturally anchored to the body
+            const wickTop = Math.min(highY, bodyTop - 2);
+            const wickBottom = Math.max(lowY, bodyTop + bodyHeight + 2);
 
             const isHovered = hoveredCandle === c;
 
             return (
               <g 
-                key={`candle-${i}`}
+                key={`candle-${c.timestamp}-${i}`}
                 onMouseEnter={() => setHoveredCandle(c)}
                 style={{ cursor: 'crosshair' }}
               >
                 {/* Upper and Lower Wick */}
                 <line
                   x1={x}
-                  y1={highY}
+                  y1={wickTop}
                   x2={x}
-                  y2={lowY}
+                  y2={wickBottom}
                   stroke={candleStroke}
                   strokeWidth={barWidth > 12 ? '1.8' : '1.2'}
                   strokeLinecap="round"

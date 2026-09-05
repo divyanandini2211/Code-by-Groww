@@ -152,6 +152,11 @@ export function App() {
         const lastCandle = prev[prev.length - 1];
         const newPrice = activeTick.current_price;
 
+        // Guard against cross-stock mismatch during active stock switching
+        if (lastCandle.close > 0 && Math.abs(newPrice - lastCandle.close) / lastCandle.close > 0.25) {
+          return prev;
+        }
+
         // Extract HH:MM from marketData.virtual_time (IST)
         let tickHHMM = '';
         if (marketData.virtual_time) {

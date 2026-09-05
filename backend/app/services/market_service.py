@@ -19,6 +19,7 @@ class MarketStateService:
         self.last_poll_time = None
         self.is_running = False
         self.simulation_speed = 1.0 # 1x (10s), 2x (5s), 5x (2s), 10x (1s max safe ML threshold)
+        self.stock_multipliers: dict[str, float] = {}
 
     def is_market_open_now(self) -> bool:
         now_ist = datetime.now(IST)
@@ -85,7 +86,8 @@ class MarketStateService:
                 )
                 stock = stock_res.scalars().first()
                 if stock:
-                    stock.current_price = tick.close
+                    mult = self.stock_multipliers.get(tick.symbol, 1.0)
+                    stock.current_price = round(tick.close * mult, 2)
                     stock.updated_at = current_ts
             await session.commit()
 

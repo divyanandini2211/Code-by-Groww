@@ -115,33 +115,45 @@ async def get_stock_history(symbol: str, limit: int = 60, db: AsyncSession = Dep
         current_virtual_time = market_service.get_current_virtual_time()
         query = query.filter(StockTick.timestamp <= current_virtual_time)
 
+    # Fetch extra to account for potential deduplication
     res = await db.execute(
-        query.order_by(StockTick.timestamp.desc()).limit(limit)
+        query.order_by(StockTick.timestamp.desc()).limit(limit * 2)
     )
-    ticks = res.scalars().all()
+    raw_ticks = res.scalars().all()
+
+    # Deduplicate strictly by minute string (keeps newest tick per minute)
+    seen_minutes = set()
+    deduped_ticks = []
+    for t in raw_ticks:
+        minute_key = t.timestamp.astimezone(IST).strftime("%H:%M")
+        if minute_key not in seen_minutes:
+            seen_minutes.add(minute_key)
+            deduped_ticks.append(t)
+        if len(deduped_ticks) >= limit:
+            break
 
     # Fallback if at the very start of replay session
-    if len(ticks) < 5:
+    if len(deduped_ticks) < 5:
         fallback_res = await db.execute(
             select(StockTick)
             .filter(StockTick.symbol == sym)
             .order_by(StockTick.timestamp.asc())
             .limit(limit)
         )
-        ticks = fallback_res.scalars().all()
+        deduped_ticks = fallback_res.scalars().all()
     else:
-        ticks = list(reversed(ticks))
+        deduped_ticks = list(reversed(deduped_ticks))
 
     return [
         {
             "timestamp": t.timestamp.astimezone(IST).strftime("%H:%M"),
-            "open": t.open,
-            "high": t.high,
-            "low": t.low,
-            "close": t.close,
-            "volume": t.volume
+            "open": round(t.open, 2),
+            "high": round(t.high, 2),
+            "low": round(t.low, 2),
+            "close": round(t.close, 2),
+            "volume": round(t.volume)
         }
-        for t in ticks
+        for t in deduped_ticks
     ]
 
 @router.post("/simulate-anomaly")
@@ -167,19 +179,43 @@ async def simulate_anomaly(
     virtual_time = market_service.get_current_virtual_time()
     stock.updated_at = virtual_time
 
-    # Record anomalous tick
-    simulated_tick = StockTick(
-        symbol=sym,
-        timestamp=virtual_time,
-        price=new_price,
-        open=old_price,
-        high=max(old_price, new_price),
-        low=min(old_price, new_price),
-        close=new_price,
-        volume=round(stock.avg_volume_20d * (volume_multiplier / 375.0), 1),
-        vwap=new_price
+    # Realistic candlestick OHLC with natural financial wicks
+    wick_offset = max(0.5, abs(new_price - old_price) * 0.15)
+    candle_high = round(max(old_price, new_price) + wick_offset, 2)
+    candle_low = round(min(old_price, new_price) - wick_offset, 2)
+    sim_vol = round(stock.avg_volume_20d * (volume_multiplier / 375.0), 1)
+
+    # Upsert: check if a tick already exists for this exact timestamp
+    existing_tick_res = await db.execute(
+        select(StockTick).filter(StockTick.symbol == sym, StockTick.timestamp == virtual_time)
     )
-    db.add(simulated_tick)
+    existing_tick = existing_tick_res.scalars().first()
+
+    if existing_tick:
+        existing_tick.price = new_price
+        existing_tick.close = new_price
+        existing_tick.high = max(existing_tick.high, candle_high)
+        existing_tick.low = min(existing_tick.low, candle_low)
+        existing_tick.volume = max(existing_tick.volume, sim_vol)
+        existing_tick.vwap = new_price
+    else:
+        simulated_tick = StockTick(
+            symbol=sym,
+            timestamp=virtual_time,
+            price=new_price,
+            open=old_price,
+            high=candle_high,
+            low=candle_low,
+            close=new_price,
+            volume=sim_vol,
+            vwap=new_price
+        )
+        db.add(simulated_tick)
+
+    # Maintain continuity in simulation replay
+    if old_price > 0:
+        market_service.stock_multipliers[sym] = new_price / old_price
+
     await db.commit()
 
     return {
