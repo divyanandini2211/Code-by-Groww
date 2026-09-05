@@ -54,10 +54,10 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
     <div style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
       
       {/* Chart Top Header & Mode Toggle */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
-            {symbol} Intraday Price & Volume Action
+            {symbol} Intraday Action
           </span>
           <div style={{ display: 'flex', background: 'var(--bg-secondary)', borderRadius: '4px', padding: '2px', border: '1px solid var(--border-color)' }}>
             <button
@@ -65,7 +65,7 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
               style={{
                 background: chartMode === 'CANDLESTICK' ? 'var(--bg-hover)' : 'transparent',
                 color: chartMode === 'CANDLESTICK' ? 'var(--groww-green)' : 'var(--text-muted)',
-                padding: '3px 8px',
+                padding: '2px 8px',
                 borderRadius: '3px',
                 fontSize: '11px',
                 fontWeight: 600
@@ -78,7 +78,7 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
               style={{
                 background: chartMode === 'LINE' ? 'var(--bg-hover)' : 'transparent',
                 color: chartMode === 'LINE' ? 'var(--groww-green)' : 'var(--text-muted)',
-                padding: '3px 8px',
+                padding: '2px 8px',
                 borderRadius: '3px',
                 fontSize: '11px',
                 fontWeight: 600
@@ -91,8 +91,8 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
 
         {/* Hover / Tooltip HUD */}
         {hoveredCandle ? (
-          <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: 'var(--text-secondary)' }}>
-            <span>Time: <b style={{ color: 'var(--text-primary)' }}>{hoveredCandle.timestamp}</b></span>
+          <div style={{ display: 'flex', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+            <span>T: <b style={{ color: 'var(--text-primary)' }}>{hoveredCandle.timestamp}</b></span>
             <span>O: <b style={{ color: 'var(--text-primary)' }}>₹{hoveredCandle.open.toFixed(1)}</b></span>
             <span>H: <b style={{ color: 'var(--groww-green)' }}>₹{hoveredCandle.high.toFixed(1)}</b></span>
             <span>L: <b style={{ color: 'var(--groww-red)' }}>₹{hoveredCandle.low.toFixed(1)}</b></span>
@@ -101,10 +101,11 @@ export const DetailedChart: React.FC<DetailedChartProps> = ({
           </div>
         ) : (
           <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            Hover candle to inspect OHLCV • Ref Price: ₹{(referencePrice || candles[0].close).toFixed(2)}
+            Hover for OHLCV • Ref: ₹{(referencePrice || candles[0].close).toFixed(2)}
           </div>
         )}
       </div>
+
 
       {/* High-Resolution Interactive SVG Canvas */}
       <div style={{ width: '100%', position: 'relative' }}>

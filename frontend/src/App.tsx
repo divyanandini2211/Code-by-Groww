@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
-  Search, CheckCircle2, ChevronRight, Zap, RefreshCw, ArrowLeftRight
+  Search, CheckCircle2, ChevronRight, Zap, RefreshCw, ArrowLeftRight,
+  PanelLeftClose, PanelLeftOpen, List
 } from 'lucide-react';
 import { api } from './services/api';
 import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle } from './types';
@@ -9,9 +10,10 @@ import { DetailedChart } from './components/DetailedChart';
 import { useMarketWebSocket } from './hooks/useMarketWebSocket';
 
 export function App() {
-  // Resizable Panel Widths (like VS Code)
-  const [leftWidth, setLeftWidth] = useState(240);
-  const [splitRatio, setSplitRatio] = useState(55); // Center vs Right percentage (55% / 45%)
+  // Resizable Panel Widths (like VS Code) & Collapsible Sidebar
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [leftWidth, setLeftWidth] = useState(210);
+  const [splitRatio, setSplitRatio] = useState(50); // Balanced 50/50 split
   const [isLayoutSwapped, setIsLayoutSwapped] = useState(false); // Can swap Chart & Table positions!
   
   const isDraggingLeft = useRef(false);
@@ -198,8 +200,8 @@ export function App() {
   // RENDER COMPONENT: The Smart Ranked Watchlist Table
   const renderWatchlistTable = () => (
     <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: 700, fontSize: '13px' }}>Ranked Watchlist (Sorted by ML Attention Score)</span>
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontWeight: 700, fontSize: '12px' }}>Ranked Watchlist (Sorted by ML Attention Score)</span>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
           {isSwitching ? 'Evaluating...' : `${intelligence?.ranked_insights?.length || 0} Equities Monitored`}
         </span>
@@ -216,21 +218,21 @@ export function App() {
           color: 'var(--text-secondary)'
         }}>
           <RefreshCw size={28} color="var(--groww-green)" className="spinner" />
-          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Loading Watchlist & Calculating ML Attention Scores...</div>
+          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>Loading Watchlist & Calculating ML Attention Scores...</div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching checkpoint deltas & volume surge multipliers</div>
         </div>
       ) : (
         <div style={{ overflowX: 'auto', flex: 1 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '11px' }}>
             <thead>
               <tr style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', fontSize: '10px', textTransform: 'uppercase' }}>
-                <th style={{ padding: '10px 14px' }}>TICKER</th>
-                <th style={{ padding: '10px 14px' }}>LTP</th>
-                <th style={{ padding: '10px 14px' }}>SINCE LAST SEEN</th>
-                <th style={{ padding: '10px 14px' }}>VOLUME</th>
-                <th style={{ padding: '10px 14px' }}>ATTENTION</th>
-                <th style={{ padding: '10px 14px' }}>SIGNALS</th>
-                <th style={{ padding: '10px 14px', textAlign: 'right' }}>ACTION</th>
+                <th style={{ padding: '8px 10px' }}>TICKER</th>
+                <th style={{ padding: '8px 10px' }}>LTP</th>
+                <th style={{ padding: '8px 10px' }}>SINCE LAST SEEN</th>
+                <th style={{ padding: '8px 10px' }}>VOLUME</th>
+                <th style={{ padding: '8px 10px' }}>ATTENTION</th>
+                <th style={{ padding: '8px 10px' }}>SIGNALS</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right' }}>ACTION</th>
               </tr>
             </thead>
             <tbody>
@@ -249,29 +251,29 @@ export function App() {
                       transition: 'background 0.08s ease'
                     }}
                   >
-                    <td style={{ padding: '10px 14px' }}>
+                    <td style={{ padding: '7px 10px' }}>
                       <div style={{ fontWeight: 600, fontSize: '12px' }}>{stock.symbol}</div>
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{stock.name}</div>
                     </td>
-                    <td style={{ padding: '10px 14px', fontWeight: 600, fontSize: '12px' }}>
+                    <td style={{ padding: '7px 10px', fontWeight: 600, fontSize: '12px' }}>
                       ₹{stock.current_price.toFixed(2)}
                     </td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <span className={`badge ${isUp ? 'badge-green' : 'badge-red'}`}>
+                    <td style={{ padding: '7px 10px' }}>
+                      <span className={`badge ${isUp ? 'badge-green' : 'badge-red'}`} style={{ padding: '1px 6px', fontSize: '10px' }}>
                         {isUp ? '+' : ''}{stock.pct_change_since_seen}%
                       </span>
                       <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '1px' }}>
                         from ₹{stock.price_at_last_seen.toFixed(2)}
                       </div>
                     </td>
-                    <td style={{ padding: '10px 14px' }}>
+                    <td style={{ padding: '7px 10px' }}>
                       <span style={{ fontWeight: 600, color: stock.volume_surge_ratio >= 2.0 ? 'var(--groww-amber)' : 'var(--text-secondary)' }}>
                         {stock.volume_surge_ratio}x
                       </span>
                     </td>
-                    <td style={{ padding: '10px 14px' }}>
+                    <td style={{ padding: '7px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <div style={{ width: '36px', height: '5px', background: 'var(--border-color)', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{ width: '32px', height: '4px', background: 'var(--border-color)', borderRadius: '2px', overflow: 'hidden' }}>
                           <div style={{
                             width: `${Math.min(stock.attention_score * 100, 100)}%`,
                             height: '100%',
@@ -281,7 +283,7 @@ export function App() {
                         <span style={{ fontWeight: 700, fontSize: '11px' }}>{stock.attention_score}</span>
                       </div>
                     </td>
-                    <td style={{ padding: '10px 14px' }}>
+                    <td style={{ padding: '7px 10px' }}>
                       <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
                         {stock.signals.length === 0 ? (
                           <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Normal</span>
@@ -294,7 +296,7 @@ export function App() {
                         )}
                       </div>
                     </td>
-                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                    <td style={{ padding: '7px 10px', textAlign: 'right' }}>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -321,16 +323,16 @@ export function App() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', height: '100%', overflowY: 'auto' }}>
       
       {/* Active Ticker Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--bg-secondary)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
         <div>
           <div style={{ fontSize: '10px', color: 'var(--groww-green)', fontWeight: 700 }}>{activeStockInfo.sector?.toUpperCase() || 'EQUITY'}</div>
-          <div style={{ fontSize: '20px', fontWeight: 700 }}>{activeStockInfo.name}</div>
+          <div style={{ fontSize: '18px', fontWeight: 700 }}>{activeStockInfo.name}</div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>NSE: {activeStockInfo.symbol}</div>
         </div>
 
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '22px', fontWeight: 700 }}>₹{activeStockInfo.current_price.toFixed(2)}</div>
-          <span className={`badge ${activeStockInfo.pct_change_since_seen >= 0 ? 'badge-green' : 'badge-red'}`} style={{ fontSize: '12px' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700 }}>₹{activeStockInfo.current_price.toFixed(2)}</div>
+          <span className={`badge ${activeStockInfo.pct_change_since_seen >= 0 ? 'badge-green' : 'badge-red'}`} style={{ fontSize: '11px', padding: '1px 6px' }}>
             {activeStockInfo.pct_change_since_seen >= 0 ? '+' : ''}{activeStockInfo.pct_change_since_seen}%
           </span>
         </div>
@@ -341,26 +343,26 @@ export function App() {
         candles={candles}
         symbol={selectedStock}
         referencePrice={activeStockInfo.price_at_last_seen}
-        height={260}
+        height={240}
       />
 
       {/* ML Evaluation Metrics Box */}
-      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <div style={{ fontSize: '12px', fontWeight: 700 }}>ML ANOMALY EVALUATION MATRIX</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '4px' }}>
-          <div style={{ background: 'var(--bg-card)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div style={{ fontSize: '11px', fontWeight: 700 }}>ML ANOMALY EVALUATION MATRIX</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '2px' }}>
+          <div style={{ background: 'var(--bg-card)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Price at Checkpoint</div>
-            <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>₹{activeStockInfo.price_at_last_seen.toFixed(2)}</div>
+            <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '2px' }}>₹{activeStockInfo.price_at_last_seen.toFixed(2)}</div>
           </div>
-          <div style={{ background: 'var(--bg-card)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+          <div style={{ background: 'var(--bg-card)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Volume Surge</div>
-            <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px', color: activeStockInfo.volume_surge_ratio >= 2 ? 'var(--groww-amber)' : 'inherit' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '2px', color: activeStockInfo.volume_surge_ratio >= 2 ? 'var(--groww-amber)' : 'inherit' }}>
               {activeStockInfo.volume_surge_ratio}x
             </div>
           </div>
-          <div style={{ background: 'var(--bg-card)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+          <div style={{ background: 'var(--bg-card)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
             <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Attention Score</div>
-            <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px', color: 'var(--groww-green)' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, marginTop: '2px', color: 'var(--groww-green)' }}>
               {activeStockInfo.attention_score} / 1.0
             </div>
           </div>
@@ -500,28 +502,57 @@ export function App() {
       {/* Main Resizable Splitter Layout (VS Code Style) */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
         
-        {/* LEFT PANEL: Watchlists */}
+        {/* LEFT PANEL: Watchlists (Collapsible) */}
         <aside style={{
-          width: `${leftWidth}px`,
-          minWidth: '180px',
-          maxWidth: '450px',
+          width: isSidebarCollapsed ? '48px' : `${leftWidth}px`,
+          minWidth: isSidebarCollapsed ? '48px' : '170px',
+          maxWidth: isSidebarCollapsed ? '48px' : '450px',
           background: 'var(--bg-secondary)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          flexShrink: 0
+          flexShrink: 0,
+          transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
-          <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px' }}>WATCHLISTS</span>
-            <button
-              onClick={() => setShowAddModal(!showAddModal)}
-              style={{ background: 'transparent', color: 'var(--groww-green)', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: 600 }}
-            >
-              <Plus size={13} /> New
-            </button>
+          <div style={{
+            padding: isSidebarCollapsed ? '12px 0' : '12px 14px',
+            display: 'flex',
+            justifyContent: isSidebarCollapsed ? 'center' : 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid var(--border-color)'
+          }}>
+            {!isSidebarCollapsed ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    onClick={() => setIsSidebarCollapsed(true)}
+                    title="Collapse sidebar (maximize space)"
+                    style={{ background: 'transparent', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', padding: '2px', borderRadius: '4px' }}
+                  >
+                    <PanelLeftClose size={15} />
+                  </button>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px' }}>WATCHLISTS</span>
+                </div>
+                <button
+                  onClick={() => setShowAddModal(!showAddModal)}
+                  title="Create new watchlist"
+                  style={{ background: 'transparent', color: 'var(--groww-green)', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: 600 }}
+                >
+                  <Plus size={13} /> New
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setIsSidebarCollapsed(false)}
+                title="Expand Watchlists panel"
+                style={{ background: 'transparent', color: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
           </div>
 
-          {showAddModal && (
+          {!isSidebarCollapsed && showAddModal && (
             <div style={{ padding: '10px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <input
                 type="text"
@@ -540,9 +571,32 @@ export function App() {
           )}
 
           {/* Watchlists List */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: isSidebarCollapsed ? '8px 4px' : '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {watchlists.map((w) => {
               const isSelected = selectedWatchlistId === w.id;
+              if (isSidebarCollapsed) {
+                return (
+                  <div
+                    key={w.id}
+                    onClick={() => setSelectedWatchlistId(w.id)}
+                    title={`${w.name} - ${w.description || 'Watchlist'}`}
+                    style={{
+                      height: '36px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      background: isSelected ? 'var(--groww-green-bg)' : 'transparent',
+                      border: isSelected ? '1px solid var(--groww-green)' : '1px solid transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: isSelected ? 'var(--groww-green)' : 'var(--text-secondary)'
+                    }}
+                  >
+                    <List size={16} />
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={w.id}
@@ -569,27 +623,39 @@ export function App() {
             })}
           </div>
 
-          {/* Judge Demo Shock Controls */}
-          <div style={{ padding: '12px', background: 'var(--bg-card)', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: 'var(--groww-amber)' }}>
-              <Zap size={13} /> DEMO CONTROLS
+          {/* Judge Demo Shock Controls (only show full when not collapsed) */}
+          {!isSidebarCollapsed ? (
+            <div style={{ padding: '12px', background: 'var(--bg-card)', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: 'var(--groww-amber)' }}>
+                <Zap size={13} /> DEMO CONTROLS
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Shock {selectedStock} to test ML Engine:</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                <button
+                  onClick={() => handleSimulateShock(selectedStock, 2.8)}
+                  style={{ background: 'var(--groww-green-bg)', color: 'var(--groww-green)', border: '1px solid rgba(0,208,156,0.3)', padding: '5px', borderRadius: '4px', fontSize: '10px', fontWeight: 600 }}
+                >
+                  +2.8% Spike
+                </button>
+                <button
+                  onClick={() => handleSimulateShock(selectedStock, -3.2)}
+                  style={{ background: 'var(--groww-red-bg)', color: 'var(--groww-red)', border: '1px solid rgba(235,91,60,0.3)', padding: '5px', borderRadius: '4px', fontSize: '10px', fontWeight: 600 }}
+                >
+                  -3.2% Dump
+                </button>
+              </div>
             </div>
-            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Shock {selectedStock} to test ML Engine:</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+          ) : (
+            <div style={{ padding: '8px 4px', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'center' }}>
               <button
                 onClick={() => handleSimulateShock(selectedStock, 2.8)}
-                style={{ background: 'var(--groww-green-bg)', color: 'var(--groww-green)', border: '1px solid rgba(0,208,156,0.3)', padding: '5px', borderRadius: '4px', fontSize: '10px', fontWeight: 600 }}
+                title={`Quick Shock: +2.8% Spike on ${selectedStock}`}
+                style={{ background: 'var(--groww-green-bg)', color: 'var(--groww-green)', padding: '6px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
-                +2.8% Spike
-              </button>
-              <button
-                onClick={() => handleSimulateShock(selectedStock, -3.2)}
-                style={{ background: 'var(--groww-red-bg)', color: 'var(--groww-red)', border: '1px solid rgba(235,91,60,0.3)', padding: '5px', borderRadius: '4px', fontSize: '10px', fontWeight: 600 }}
-              >
-                -3.2% Dump
+                <Zap size={15} />
               </button>
             </div>
-          </div>
+          )}
         </aside>
 
         {/* DRAGGABLE DIVIDER 1 */}
@@ -617,10 +683,10 @@ export function App() {
             width: `${splitRatio}%`,
             minWidth: '320px',
             overflowY: 'auto',
-            padding: '16px',
+            padding: '12px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '14px'
+            gap: '10px'
           }}>
             {!isLayoutSwapped ? (
               <>
@@ -629,10 +695,10 @@ export function App() {
                   background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '8px',
-                  padding: '12px 16px',
+                  padding: '10px 14px',
                   boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
                       <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
                     </div>
@@ -654,7 +720,7 @@ export function App() {
                     </div>
                   </div>
 
-                  <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-primary)', margin: 0 }}>
+                  <p style={{ fontSize: '12px', lineHeight: '1.45', color: 'var(--text-primary)', margin: 0 }}>
                     {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
                   </p>
                 </div>
@@ -688,10 +754,10 @@ export function App() {
             width: `${100 - splitRatio}%`,
             minWidth: '320px',
             overflowY: 'auto',
-            padding: '16px',
+            padding: '12px',
             display: 'flex',
             flexDirection: 'column',
-            gap: '14px',
+            gap: '10px',
             background: 'var(--bg-secondary)'
           }}>
             {!isLayoutSwapped ? (
@@ -703,10 +769,10 @@ export function App() {
                   background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
                   border: '1px solid var(--border-color)',
                   borderRadius: '8px',
-                  padding: '12px 16px',
+                  padding: '10px 14px',
                   boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
                       <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
                     </div>
@@ -728,7 +794,7 @@ export function App() {
                     </div>
                   </div>
 
-                  <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-primary)', margin: 0 }}>
+                  <p style={{ fontSize: '12px', lineHeight: '1.45', color: 'var(--text-primary)', margin: 0 }}>
                     {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
                   </p>
                 </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Candle } from '../../types';
+import { Candle } from '../types';
 
 interface MiniChartProps {
   candles: Candle[];
