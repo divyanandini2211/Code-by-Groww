@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
   Search, CheckCircle2, ChevronRight, Zap, RefreshCw, ArrowLeftRight,
-  PanelLeftClose, PanelLeftOpen, List, User as UserIcon, LogIn, LogOut, ShieldCheck
+  PanelLeftClose, PanelLeftOpen, List, User as UserIcon, LogIn, LogOut, ShieldCheck,
+  Gauge, FastForward, Play, AlertCircle
 } from 'lucide-react';
 import { api } from './services/api';
 import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle, User } from './types';
@@ -29,6 +30,11 @@ export function App() {
   const [authError, setAuthError] = useState('');
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [priceFlashMap, setPriceFlashMap] = useState<Record<string, 'up' | 'down'>>({});
+
+  // Market Closed Simulation & Speed Multiplier (ML safe limit: 0.5x to 10x)
+  const [showSimPromptModal, setShowSimPromptModal] = useState(false);
+  const [simSpeed, setSimSpeed] = useState<number>(1.0);
+  const [simDate, setSimDate] = useState<string>('Sep 04, 2026');
 
   // State
   const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
@@ -191,6 +197,21 @@ export function App() {
 
       const status = await api.getMarketStatus();
       setMarketStatus(status);
+      if (status.replay_date) {
+        setSimDate(status.replay_date);
+      }
+      if (status.simulation_speed) {
+        setSimSpeed(status.simulation_speed);
+      }
+
+      // If user is already logged in or logs in, and market is closed, offer simulation prompt
+      if (status.status === 'CLOSED') {
+        const hasPrompted = sessionStorage.getItem('groww_sim_prompt_shown');
+        if (!hasPrompted && user) {
+          setShowSimPromptModal(true);
+          sessionStorage.setItem('groww_sim_prompt_shown', 'true');
+        }
+      }
 
       const lists = await api.getWatchlists();
       setWatchlists(lists);
@@ -222,6 +243,12 @@ export function App() {
         setCurrentUser(res.user);
         setShowAuthModal(false);
         setAuthPassword('');
+
+        // If market is down when user logs in, show prompt immediately!
+        if (marketStatus?.status === 'CLOSED') {
+          setShowSimPromptModal(true);
+        }
+
         // Refresh watchlists for user
         const userLists = await api.getWatchlists();
         setWatchlists(userLists);
@@ -236,6 +263,15 @@ export function App() {
       setAuthError(err.message || 'Network error during authentication');
     } finally {
       setIsAuthLoading(false);
+    }
+  };
+
+  const handleSpeedChange = async (newSpeed: number) => {
+    setSimSpeed(newSpeed);
+    try {
+      await api.setSimulationSpeed(newSpeed);
+    } catch (e) {
+      console.error('Speed change error:', e);
     }
   };
 
@@ -539,9 +575,59 @@ export function App() {
             <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '-0.5px' }}>Groww <span style={{ color: 'var(--groww-green)', fontWeight: 500, fontSize: '12px' }}>Smart Watchlist</span></span>
           </div>
 
-          <div className={`badge ${marketStatus?.status === 'OPEN' ? 'badge-green' : 'badge-amber'}`} style={{ padding: '3px 8px', fontSize: '11px' }}>
+          <div 
+            onClick={() => setShowSimPromptModal(true)}
+            className={`badge ${marketStatus?.status === 'OPEN' ? 'badge-green' : 'badge-amber'}`} 
+            style={{ padding: '4px 9px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            title="Click to view Market Simulation settings"
+          >
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor', display: 'inline-block' }}></span>
-            {marketStatus?.status === 'OPEN' ? 'MARKET OPEN (NSE/BSE)' : 'MARKET CLOSED (Replaying Session)'}
+            {marketStatus?.status === 'OPEN' ? 'MARKET OPEN (NSE/BSE)' : `MARKET CLOSED (Replaying ${simDate})`}
+          </div>
+
+          {/* Live Speed-Up Slider (Safe within ML model capacity: 0.5x to 10.0x) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            padding: '3px 10px',
+            borderRadius: '6px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--groww-green)', fontSize: '11px', fontWeight: 600 }}>
+              <FastForward size={13} />
+              <span style={{ color: 'var(--text-secondary)' }}>Speed:</span>
+              <b style={{ color: 'var(--text-primary)', minWidth: '32px' }}>{simSpeed.toFixed(1)}x</b>
+            </div>
+            
+            <input
+              type="range"
+              min="0.5"
+              max="10.0"
+              step="0.5"
+              value={simSpeed}
+              onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+              style={{
+                width: '75px',
+                accentColor: 'var(--groww-green)',
+                cursor: 'pointer',
+                height: '4px'
+              }}
+              title={`Simulation speed: ${simSpeed}x (ML safe limit: 10x)`}
+            />
+
+            <span style={{
+              fontSize: '9px',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              background: simSpeed >= 10 ? 'rgba(235,91,60,0.15)' : 'var(--groww-green-bg)',
+              color: simSpeed >= 10 ? 'var(--groww-red)' : 'var(--groww-green)',
+              fontWeight: 600,
+              letterSpacing: '0.3px'
+            }}>
+              {simSpeed >= 10 ? 'ML MAX' : 'ML SAFE'}
+            </span>
           </div>
 
           <span style={{ fontSize: '11px', color: isConnected ? 'var(--groww-green)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -818,6 +904,211 @@ export function App() {
                   </b>
                 </span>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Market Down Replay Simulation Prompt Modal */}
+      {showSimPromptModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(5px)',
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{
+            width: '450px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '24px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            {/* Top Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: 'rgba(255, 186, 0, 0.15)',
+                  border: '1px solid rgba(255, 186, 0, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <AlertCircle size={20} color="#ffba00" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Market Simulation
+                  </h3>
+                  <span style={{ fontSize: '11px', color: 'var(--groww-amber)' }}>
+                    NSE & BSE Markets Currently Closed
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSimPromptModal(false)}
+                style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '16px', fontWeight: 600, padding: '2px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Prompt Banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(255,186,0,0.1) 0%, rgba(0,210,144,0.08) 100%)',
+              border: '1px solid rgba(255,186,0,0.3)',
+              borderRadius: '8px',
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffc107', lineHeight: '1.3' }}>
+                "Market is down, use last ({simDate})'s data to simulate?"
+              </div>
+              <p style={{ margin: 0, fontSize: '12px', lineHeight: '1.45', color: 'var(--text-secondary)' }}>
+                Real-time trading hours have concluded. You can replay the full 1-minute historical intraday sequence from <b>{simDate}</b> to watch prices, candle charts, and ML attention signals update dynamically.
+              </p>
+            </div>
+
+            {/* Speed Slider Section */}
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Gauge size={15} color="var(--groww-green)" /> Simulation Playback Speed
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: 'var(--groww-green)',
+                  background: 'var(--groww-green-bg)',
+                  border: '1px solid rgba(0, 210, 144, 0.3)',
+                  padding: '2px 8px',
+                  borderRadius: '4px'
+                }}>
+                  {simSpeed.toFixed(1)}x Speed
+                </span>
+              </div>
+
+              {/* Slider Component */}
+              <input
+                type="range"
+                min="0.5"
+                max="10.0"
+                step="0.5"
+                value={simSpeed}
+                onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+                style={{
+                  width: '100%',
+                  accentColor: 'var(--groww-green)',
+                  cursor: 'pointer'
+                }}
+              />
+
+              {/* Preset Speed Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
+                {[0.5, 1.0, 2.0, 5.0, 10.0].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => handleSpeedChange(s)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 0',
+                      fontSize: '11px',
+                      fontWeight: simSpeed === s ? 700 : 500,
+                      background: simSpeed === s ? 'var(--groww-green)' : 'var(--bg-secondary)',
+                      color: simSpeed === s ? '#000' : 'var(--text-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+
+              {/* ML Safety Constraint Note */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '11px',
+                color: 'var(--groww-green)',
+                background: 'rgba(0, 210, 144, 0.08)',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid rgba(0, 210, 144, 0.2)'
+              }}>
+                <Zap size={14} color="var(--groww-green)" style={{ flexShrink: 0 }} />
+                <span>
+                  <b>ML Safe Speed Limit (Max 10x):</b> Keeps tick intervals at &ge;1.0s so the Isolation Forest ML attention model evaluates all stocks without event queue latency.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>
+              <button
+                type="button"
+                onClick={() => setShowSimPromptModal(false)}
+                style={{
+                  flex: 1,
+                  background: 'var(--groww-green)',
+                  color: '#000',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  padding: '11px 16px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                <Play size={14} color="#000" fill="#000" /> Start Live Simulation ({simSpeed}x)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSimPromptModal(false)}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  padding: '11px 16px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Dismiss
+              </button>
             </div>
           </div>
         </div>

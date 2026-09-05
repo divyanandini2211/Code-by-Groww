@@ -87,7 +87,9 @@ async def websocket_market_stream(websocket: WebSocket):
                     ]
                 }
             await websocket.send_json(data)
-            await asyncio.sleep(3)
+            # Dynamic sleep based on simulation speed (Safe range: 1.0s to 3.0s)
+            ws_sleep = max(1.0, 3.0 / max(0.5, market_service.simulation_speed))
+            await asyncio.sleep(ws_sleep)
     except (WebSocketDisconnect, asyncio.CancelledError):
         pass
 

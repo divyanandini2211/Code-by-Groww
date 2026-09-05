@@ -18,6 +18,7 @@ class MarketStateService:
         self.replay_timestamps = [] # List of unique timestamps from Friday
         self.last_poll_time = None
         self.is_running = False
+        self.simulation_speed = 1.0 # 1x (10s), 2x (5s), 5x (2s), 10x (1s max safe ML threshold)
 
     def is_market_open_now(self) -> bool:
         now_ist = datetime.now(IST)
@@ -26,6 +27,12 @@ class MarketStateService:
             return False
         current_time = now_ist.time()
         return MARKET_OPEN <= current_time <= MARKET_CLOSE
+
+    def get_replay_date_str(self) -> str:
+        """Returns formatted string of the historical session date (e.g. Sep 04, 2026)."""
+        if self.replay_timestamps:
+            return self.replay_timestamps[0].astimezone(IST).strftime("%b %d, %Y")
+        return "latest Friday"
 
     async def initialize(self):
         """Loads available intraday timestamps from Neon DB for replay mode."""
@@ -51,6 +58,12 @@ class MarketStateService:
         if not self.is_replay_mode or not self.replay_timestamps:
             return datetime.now(timezone.utc)
         return self.replay_timestamps[self.replay_index]
+
+    def set_simulation_speed(self, speed: float) -> float:
+        """Sets safe simulation speed between 0.5x and 10x (ML pipeline capacity)."""
+        clamped = max(0.5, min(10.0, float(speed)))
+        self.simulation_speed = clamped
+        return self.simulation_speed
 
     async def advance_replay_tick(self):
         """Advances replay cursor by 1 minute and updates Stock current_price in Neon."""
@@ -110,8 +123,8 @@ class MarketStateService:
             await session.commit()
             self.last_poll_time = now_utc
 
-    async def start_background_loop(self, interval_seconds: int = 15):
-        """Main background worker running continuously."""
+    async def start_background_loop(self, interval_seconds: int = 10):
+        """Main background worker running continuously with dynamic simulation speed."""
         self.is_running = True
         await self.initialize()
         
@@ -124,6 +137,8 @@ class MarketStateService:
             except Exception as e:
                 print(f"[MarketService] Background tick error: {e}")
             
-            await asyncio.sleep(interval_seconds)
+            # Dynamic sleep based on simulation speed (Safe range: 1.0s to 15s)
+            dynamic_sleep = max(1.0, float(interval_seconds) / max(0.5, self.simulation_speed))
+            await asyncio.sleep(dynamic_sleep)
 
 market_service = MarketStateService()

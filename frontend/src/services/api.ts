@@ -136,4 +136,11 @@ export const api = {
     });
     return res.json();
   },
+
+  setSimulationSpeed: async (speed: number) => {
+    const res = await fetch(`${API_BASE}/market/replay/speed?speed=${speed}`, {
+      method: 'POST',
+    });
+    return res.json();
+  },
 };

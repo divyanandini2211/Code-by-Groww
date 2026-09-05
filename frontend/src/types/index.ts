@@ -50,6 +50,8 @@ export interface MarketStatus {
   current_time_ist: string;
   virtual_market_time: string;
   is_replay_mode: boolean;
+  replay_date?: string;
+  simulation_speed?: number;
   total_intraday_candles: number;
   replay_cursor_index: number;
   message: string;

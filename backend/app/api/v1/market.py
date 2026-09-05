@@ -22,9 +22,11 @@ async def get_market_status():
         "current_time_ist": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
         "virtual_market_time": virtual_time.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST"),
         "is_replay_mode": market_service.is_replay_mode,
+        "replay_date": market_service.get_replay_date_str(),
+        "simulation_speed": market_service.simulation_speed,
         "total_intraday_candles": len(market_service.replay_timestamps),
         "replay_cursor_index": market_service.replay_index,
-        "message": "Market is currently OPEN (Live Polling Active)" if is_open else "Market is CLOSED. Replaying latest Friday session sequence."
+        "message": "Market is currently OPEN (Live Polling Active)" if is_open else f"Market is CLOSED. Replaying {market_service.get_replay_date_str()} session sequence."
     }
 
 @router.post("/replay/toggle")
@@ -32,6 +34,15 @@ async def toggle_replay_mode(enable: bool = Query(...)):
     """Allows user or judges to force Replay Mode ON or OFF."""
     market_service.is_replay_mode = enable
     return {"is_replay_mode": market_service.is_replay_mode}
+
+@router.post("/replay/speed")
+async def set_replay_speed(speed: float = Query(..., ge=0.5, le=10.0)):
+    """Sets simulation speed multiplier (0.5x to 10x max within ML processing limits)."""
+    current_speed = market_service.set_simulation_speed(speed)
+    return {
+        "simulation_speed": current_speed,
+        "message": f"Simulation running at {current_speed}x speed"
+    }
 
 @router.post("/replay/seek")
 async def seek_replay_cursor(index: int = Query(..., ge=0)):
