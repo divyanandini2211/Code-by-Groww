@@ -1,19 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
-  TrendingUp, TrendingDown, Clock, Sparkles, Activity, Plus, Trash2, 
-  Search, CheckCircle2, ChevronRight, Zap, RefreshCw, GripVertical
+  TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
+  Search, CheckCircle2, ChevronRight, Zap, RefreshCw, ArrowLeftRight
 } from 'lucide-react';
 import { api } from './services/api';
 import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle } from './types';
-import { MiniChart } from './components/MiniChart';
+import { DetailedChart } from './components/DetailedChart';
 import { useMarketWebSocket } from './hooks/useMarketWebSocket';
 
 export function App() {
   // Resizable Panel Widths (like VS Code)
-  const [leftWidth, setLeftWidth] = useState(250);
-  const [rightWidth, setRightWidth] = useState(380);
+  const [leftWidth, setLeftWidth] = useState(240);
+  const [splitRatio, setSplitRatio] = useState(55); // Center vs Right percentage (55% / 45%)
+  const [isLayoutSwapped, setIsLayoutSwapped] = useState(false); // Can swap Chart & Table positions!
+  
   const isDraggingLeft = useRef(false);
-  const isDraggingRight = useRef(false);
+  const isDraggingCenter = useRef(false);
 
   // State
   const [marketStatus, setMarketStatus] = useState<MarketStatus | null>(null);
@@ -31,7 +33,7 @@ export function App() {
   const [newWatchlistName, setNewWatchlistName] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // In-Memory Client Cache to make switching between watchlists INSTANT (<5ms)
+  // Client Cache
   const cacheRef = useRef<Record<string, IntelligenceResponse>>({});
   const historyCacheRef = useRef<Record<string, Candle[]>>({});
 
@@ -47,7 +49,7 @@ export function App() {
   useEffect(() => {
     if (selectedWatchlistId) {
       setIsSwitching(true);
-      setIntelligence(null); // Clear previous watchlist data completely
+      setIntelligence(null);
       loadIntelligence(selectedWatchlistId, sinceMinutes);
     }
   }, [selectedWatchlistId, sinceMinutes]);
@@ -74,24 +76,26 @@ export function App() {
     }
   }, [searchQuery]);
 
-  // VS Code style draggable splitter handlers
+  // Draggable splitter handlers
   const onMouseDownLeft = () => { isDraggingLeft.current = true; };
-  const onMouseDownRight = () => { isDraggingRight.current = true; };
+  const onMouseDownCenter = () => { isDraggingCenter.current = true; };
 
   const onMouseMove = useCallback((e: MouseEvent) => {
     if (isDraggingLeft.current) {
       const newW = Math.max(180, Math.min(450, e.clientX));
       setLeftWidth(newW);
     }
-    if (isDraggingRight.current) {
-      const newW = Math.max(280, Math.min(600, window.innerWidth - e.clientX));
-      setRightWidth(newW);
+    if (isDraggingCenter.current) {
+      const availableWidth = window.innerWidth - leftWidth;
+      const mouseOffset = e.clientX - leftWidth;
+      const newRatio = Math.max(25, Math.min(75, (mouseOffset / availableWidth) * 100));
+      setSplitRatio(newRatio);
     }
-  }, []);
+  }, [leftWidth]);
 
   const onMouseUp = useCallback(() => {
     isDraggingLeft.current = false;
-    isDraggingRight.current = false;
+    isDraggingCenter.current = false;
   }, []);
 
   useEffect(() => {
@@ -123,7 +127,6 @@ export function App() {
     try {
       const res = await api.getWatchlistIntelligence(watchlistId, mins);
       setIntelligence(res);
-      // Cache response
       cacheRef.current[`${watchlistId}_${mins}`] = res;
     } catch (e) {
       console.error(e);
@@ -169,7 +172,7 @@ export function App() {
 
   const handleSaveCheckpoint = async () => {
     await api.saveCheckpoint('divya_user');
-    cacheRef.current = {}; // Invalidate old checkpoints
+    cacheRef.current = {};
     loadIntelligence(selectedWatchlistId, sinceMinutes);
   };
 
@@ -180,19 +183,203 @@ export function App() {
     loadStockHistory(symbol);
   };
 
-  const activeStockInfo = intelligence?.ranked_insights.find(s => s.symbol === selectedStock);
+  const activeStockInfo = intelligence?.ranked_insights?.find(s => s.symbol === selectedStock) || {
+    symbol: selectedStock,
+    name: selectedStock,
+    sector: 'Equities',
+    current_price: candles[candles.length - 1]?.close || 1000,
+    price_at_last_seen: candles[0]?.close || 1000,
+    pct_change_since_seen: 0,
+    volume_surge_ratio: 1.0,
+    attention_score: 0.2,
+    signals: []
+  };
+
+  // RENDER COMPONENT: The Smart Ranked Watchlist Table
+  const renderWatchlistTable = () => (
+    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', minHeight: '380px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontWeight: 700, fontSize: '13px' }}>Ranked Watchlist (Sorted by ML Attention Score)</span>
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+          {isSwitching ? 'Evaluating...' : `${intelligence?.ranked_insights?.length || 0} Equities Monitored`}
+        </span>
+      </div>
+
+      {isSwitching ? (
+        <div style={{
+          height: '320px',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          color: 'var(--text-secondary)'
+        }}>
+          <RefreshCw size={28} color="var(--groww-green)" className="spinner" />
+          <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Loading Watchlist & Calculating ML Attention Scores...</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching checkpoint deltas & volume surge multipliers</div>
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto', flex: 1 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+            <thead>
+              <tr style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', fontSize: '10px', textTransform: 'uppercase' }}>
+                <th style={{ padding: '10px 14px' }}>TICKER</th>
+                <th style={{ padding: '10px 14px' }}>LTP</th>
+                <th style={{ padding: '10px 14px' }}>SINCE LAST SEEN</th>
+                <th style={{ padding: '10px 14px' }}>VOLUME</th>
+                <th style={{ padding: '10px 14px' }}>ATTENTION</th>
+                <th style={{ padding: '10px 14px' }}>SIGNALS</th>
+                <th style={{ padding: '10px 14px', textAlign: 'right' }}>ACTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {intelligence?.ranked_insights?.map((stock) => {
+                const isSelected = selectedStock === stock.symbol;
+                const isUp = stock.pct_change_since_seen >= 0;
+
+                return (
+                  <tr
+                    key={stock.symbol}
+                    onClick={() => setSelectedStock(stock.symbol)}
+                    style={{
+                      borderBottom: '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      background: isSelected ? 'var(--bg-hover)' : 'transparent',
+                      transition: 'background 0.08s ease'
+                    }}
+                  >
+                    <td style={{ padding: '10px 14px' }}>
+                      <div style={{ fontWeight: 600, fontSize: '12px' }}>{stock.symbol}</div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{stock.name}</div>
+                    </td>
+                    <td style={{ padding: '10px 14px', fontWeight: 600, fontSize: '12px' }}>
+                      ₹{stock.current_price.toFixed(2)}
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span className={`badge ${isUp ? 'badge-green' : 'badge-red'}`}>
+                        {isUp ? '+' : ''}{stock.pct_change_since_seen}%
+                      </span>
+                      <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '1px' }}>
+                        from ₹{stock.price_at_last_seen.toFixed(2)}
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ fontWeight: 600, color: stock.volume_surge_ratio >= 2.0 ? 'var(--groww-amber)' : 'var(--text-secondary)' }}>
+                        {stock.volume_surge_ratio}x
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ width: '36px', height: '5px', background: 'var(--border-color)', borderRadius: '2px', overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${Math.min(stock.attention_score * 100, 100)}%`,
+                            height: '100%',
+                            background: stock.attention_score > 0.6 ? 'var(--groww-amber)' : 'var(--groww-green)'
+                          }}></div>
+                        </div>
+                        <span style={{ fontWeight: 700, fontSize: '11px' }}>{stock.attention_score}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
+                        {stock.signals.length === 0 ? (
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Normal</span>
+                        ) : (
+                          stock.signals.map((sig) => (
+                            <span key={sig} className="badge badge-blue" style={{ fontSize: '9px', padding: '1px 5px' }}>
+                              {sig.replace('_', ' ')}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveStock(stock.symbol);
+                        }}
+                        style={{ background: 'transparent', color: 'var(--text-muted)', padding: '2px' }}
+                        title="Remove from watchlist"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  // RENDER COMPONENT: The Detailed Financial Chart & Metric Breakdown
+  const renderChartDeepDive = () => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', height: '100%', overflowY: 'auto' }}>
+      
+      {/* Active Ticker Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--bg-secondary)', padding: '14px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+        <div>
+          <div style={{ fontSize: '10px', color: 'var(--groww-green)', fontWeight: 700 }}>{activeStockInfo.sector?.toUpperCase() || 'EQUITY'}</div>
+          <div style={{ fontSize: '20px', fontWeight: 700 }}>{activeStockInfo.name}</div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>NSE: {activeStockInfo.symbol}</div>
+        </div>
+
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '22px', fontWeight: 700 }}>₹{activeStockInfo.current_price.toFixed(2)}</div>
+          <span className={`badge ${activeStockInfo.pct_change_since_seen >= 0 ? 'badge-green' : 'badge-red'}`} style={{ fontSize: '12px' }}>
+            {activeStockInfo.pct_change_since_seen >= 0 ? '+' : ''}{activeStockInfo.pct_change_since_seen}%
+          </span>
+        </div>
+      </div>
+
+      {/* Detailed Financial Chart (Candlesticks + Volume Bars + Reference Level) */}
+      <DetailedChart
+        candles={candles}
+        symbol={selectedStock}
+        referencePrice={activeStockInfo.price_at_last_seen}
+        height={260}
+      />
+
+      {/* ML Evaluation Metrics Box */}
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ fontSize: '12px', fontWeight: 700 }}>ML ANOMALY EVALUATION MATRIX</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', marginTop: '4px' }}>
+          <div style={{ background: 'var(--bg-card)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Price at Checkpoint</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>₹{activeStockInfo.price_at_last_seen.toFixed(2)}</div>
+          </div>
+          <div style={{ background: 'var(--bg-card)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Volume Surge</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px', color: activeStockInfo.volume_surge_ratio >= 2 ? 'var(--groww-amber)' : 'inherit' }}>
+              {activeStockInfo.volume_surge_ratio}x
+            </div>
+          </div>
+          <div style={{ background: 'var(--bg-card)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Attention Score</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px', color: 'var(--groww-green)' }}>
+              {activeStockInfo.attention_score} / 1.0
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg-primary)', userSelect: isDraggingLeft.current || isDraggingRight.current ? 'none' : 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg-primary)', userSelect: isDraggingLeft.current || isDraggingCenter.current ? 'none' : 'auto' }}>
       
       {/* Top Header Bar */}
       <header style={{
-        height: '54px',
+        height: '52px',
         borderBottom: '1px solid var(--border-color)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 20px',
+        padding: '0 18px',
         background: 'var(--bg-secondary)',
         flexShrink: 0
       }}>
@@ -201,7 +388,7 @@ export function App() {
             <div style={{ width: '26px', height: '26px', borderRadius: '6px', background: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <TrendingUp size={16} color="#000" />
             </div>
-            <span style={{ fontWeight: 700, fontSize: '17px', letterSpacing: '-0.5px' }}>Groww <span style={{ color: 'var(--groww-green)', fontWeight: 500, fontSize: '13px' }}>Smart Watchlist</span></span>
+            <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '-0.5px' }}>Groww <span style={{ color: 'var(--groww-green)', fontWeight: 500, fontSize: '12px' }}>Smart Watchlist</span></span>
           </div>
 
           <div className={`badge ${marketStatus?.status === 'OPEN' ? 'badge-green' : 'badge-amber'}`} style={{ padding: '3px 8px', fontSize: '11px' }}>
@@ -210,17 +397,40 @@ export function App() {
           </div>
 
           <span style={{ fontSize: '11px', color: isConnected ? 'var(--groww-green)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Activity size={12} /> {isConnected ? 'Live Stream 3s' : 'Connecting...'}
+            <Activity size={12} /> {isConnected ? 'Live WebSocket Active' : 'Connecting...'}
           </span>
         </div>
 
-        {/* Global Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ position: 'relative', width: '260px' }}>
+        {/* Global Controls & Layout Swapper */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          
+          {/* Swap Panels Button */}
+          <button
+            onClick={() => setIsLayoutSwapped(!isLayoutSwapped)}
+            title="Swap Table and Detailed Chart positions"
+            style={{
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '11px',
+              fontWeight: 600
+            }}
+          >
+            <ArrowLeftRight size={13} color="var(--groww-green)" /> 
+            {isLayoutSwapped ? 'Default View' : 'Swap Table & Chart'}
+          </button>
+
+          {/* Search Bar */}
+          <div style={{ position: 'relative', width: '240px' }}>
             <Search size={14} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '9px' }} />
             <input
               type="text"
-              placeholder="Search & add stock (Ctrl+K)..."
+              placeholder="Search & add stock..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{ width: '100%', paddingLeft: '30px', paddingRight: '10px', height: '32px' }}
@@ -301,7 +511,7 @@ export function App() {
           overflow: 'hidden',
           flexShrink: 0
         }}>
-          <div style={{ padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
+          <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
             <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.5px' }}>WATCHLISTS</span>
             <button
               onClick={() => setShowAddModal(!showAddModal)}
@@ -359,7 +569,7 @@ export function App() {
             })}
           </div>
 
-          {/* Judge Demo Shock Box */}
+          {/* Judge Demo Shock Controls */}
           <div style={{ padding: '12px', background: 'var(--bg-card)', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: 'var(--groww-amber)' }}>
               <Zap size={13} /> DEMO CONTROLS
@@ -399,237 +609,136 @@ export function App() {
           title="Drag to resize panel"
         />
 
-        {/* CENTER PANEL: Ranked Watchlist Table & Executive Briefing */}
-        <section style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '400px' }}>
+        {/* WORKSPACE AREA: (Center + Right, with dynamic swap) */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           
-          {/* Executive AI Briefing (Google Gemini) */}
+          {/* Section A (Default: Table + Executive Briefing, Swappable: Chart) */}
           <div style={{
-            background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            padding: '14px 18px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
+            width: `${splitRatio}%`,
+            minWidth: '320px',
+            overflowY: 'auto',
+            padding: '16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
-                <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
-              </div>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Clock size={13} color="var(--text-muted)" />
-                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Away window:</span>
-                <select
-                  value={sinceMinutes}
-                  onChange={(e) => setSinceMinutes(Number(e.target.value))}
-                  style={{ padding: '2px 6px', fontSize: '11px', height: '26px' }}
-                >
-                  <option value={15}>15 mins</option>
-                  <option value={30}>30 mins</option>
-                  <option value={45}>45 mins</option>
-                  <option value={60}>1 hour</option>
-                  <option value={120}>2 hours</option>
-                </select>
-              </div>
-            </div>
+            {!isLayoutSwapped ? (
+              <>
+                {/* Executive AI Briefing (Google Gemini) */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '12px 16px',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
+                      <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
+                    </div>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={13} color="var(--text-muted)" />
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Away window:</span>
+                      <select
+                        value={sinceMinutes}
+                        onChange={(e) => setSinceMinutes(Number(e.target.value))}
+                        style={{ padding: '2px 6px', fontSize: '11px', height: '24px' }}
+                      >
+                        <option value={15}>15 mins</option>
+                        <option value={30}>30 mins</option>
+                        <option value={45}>45 mins</option>
+                        <option value={60}>1 hour</option>
+                        <option value={120}>2 hours</option>
+                      </select>
+                    </div>
+                  </div>
 
-            <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-primary)', margin: 0 }}>
-              {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
-            </p>
-          </div>
+                  <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-primary)', margin: 0 }}>
+                    {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
+                  </p>
+                </div>
 
-          {/* Ranked Smart Watchlist Table with Clean Loading Overlay */}
-          <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', minHeight: '360px', position: 'relative' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontWeight: 700, fontSize: '13px' }}>Ranked Watchlist (Sorted by ML Attention Score)</span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {isSwitching ? 'Evaluating...' : `${intelligence?.ranked_insights?.length || 0} Equities Monitored`}
-              </span>
-            </div>
-
-            {isSwitching ? (
-              <div style={{
-                height: '320px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '12px',
-                color: 'var(--text-secondary)'
-              }}>
-                <RefreshCw size={28} color="var(--groww-green)" className="spinner" />
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Loading Watchlist & Calculating ML Attention Scores...</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching checkpoint deltas & volume surge multipliers</div>
-              </div>
+                {renderWatchlistTable()}
+              </>
             ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
-              <thead>
-                <tr style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', fontSize: '10px', textTransform: 'uppercase' }}>
-                  <th style={{ padding: '10px 14px' }}>TICKER</th>
-                  <th style={{ padding: '10px 14px' }}>LTP</th>
-                  <th style={{ padding: '10px 14px' }}>SINCE LAST SEEN</th>
-                  <th style={{ padding: '10px 14px' }}>VOLUME MULTIPLIER</th>
-                  <th style={{ padding: '10px 14px' }}>ATTENTION PRIORITY</th>
-                  <th style={{ padding: '10px 14px' }}>SIGNALS</th>
-                  <th style={{ padding: '10px 14px', textAlign: 'right' }}>ACTION</th>
-                </tr>
-              </thead>
-              <tbody>
-                {intelligence?.ranked_insights?.map((stock) => {
-                  const isSelected = selectedStock === stock.symbol;
-                  const isUp = stock.pct_change_since_seen >= 0;
-
-                  return (
-                    <tr
-                      key={stock.symbol}
-                      onClick={() => setSelectedStock(stock.symbol)}
-                      style={{
-                        borderBottom: '1px solid var(--border-color)',
-                        cursor: 'pointer',
-                        background: isSelected ? 'var(--bg-hover)' : 'transparent',
-                        transition: 'background 0.08s ease'
-                      }}
-                    >
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ fontWeight: 600, fontSize: '12px' }}>{stock.symbol}</div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{stock.name}</div>
-                      </td>
-                      <td style={{ padding: '10px 14px', fontWeight: 600, fontSize: '12px' }}>
-                        ₹{stock.current_price.toFixed(2)}
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <span className={`badge ${isUp ? 'badge-green' : 'badge-red'}`}>
-                          {isUp ? '+' : ''}{stock.pct_change_since_seen}%
-                        </span>
-                        <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginTop: '1px' }}>
-                          from ₹{stock.price_at_last_seen.toFixed(2)}
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <span style={{ fontWeight: 600, color: stock.volume_surge_ratio >= 2.0 ? 'var(--groww-amber)' : 'var(--text-secondary)' }}>
-                          {stock.volume_surge_ratio}x
-                        </span>
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <div style={{ width: '36px', height: '5px', background: 'var(--border-color)', borderRadius: '2px', overflow: 'hidden' }}>
-                            <div style={{
-                              width: `${Math.min(stock.attention_score * 100, 100)}%`,
-                              height: '100%',
-                              background: stock.attention_score > 0.6 ? 'var(--groww-amber)' : 'var(--groww-green)'
-                            }}></div>
-                          </div>
-                          <span style={{ fontWeight: 700, fontSize: '11px' }}>{stock.attention_score}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap' }}>
-                          {stock.signals.length === 0 ? (
-                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Normal</span>
-                          ) : (
-                            stock.signals.map((sig) => (
-                              <span key={sig} className="badge badge-blue" style={{ fontSize: '9px', padding: '1px 5px' }}>
-                                {sig.replace('_', ' ')}
-                              </span>
-                            ))
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveStock(stock.symbol);
-                          }}
-                          style={{ background: 'transparent', color: 'var(--text-muted)', padding: '2px' }}
-                          title="Remove from watchlist"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              renderChartDeepDive()
             )}
           </div>
 
-        </section>
+          {/* DRAGGABLE DIVIDER 2 */}
+          <div
+            onMouseDown={onMouseDownCenter}
+            style={{
+              width: '5px',
+              background: 'var(--border-color)',
+              cursor: 'col-resize',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 10,
+              transition: 'background 0.2s',
+              opacity: 0.6
+            }}
+            title="Drag to resize panels"
+          />
 
-        {/* DRAGGABLE DIVIDER 2 */}
-        <div
-          onMouseDown={onMouseDownRight}
-          style={{
-            width: '5px',
-            background: 'var(--border-color)',
-            cursor: 'col-resize',
+          {/* Section B (Default: Detailed Chart, Swappable: Table + Executive Briefing) */}
+          <div style={{
+            width: `${100 - splitRatio}%`,
+            minWidth: '320px',
+            overflowY: 'auto',
+            padding: '16px',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10,
-            transition: 'background 0.2s',
-            opacity: 0.6
-          }}
-          title="Drag to resize panel"
-        />
+            flexDirection: 'column',
+            gap: '14px',
+            background: 'var(--bg-secondary)'
+          }}>
+            {!isLayoutSwapped ? (
+              renderChartDeepDive()
+            ) : (
+              <>
+                {/* Executive AI Briefing (Google Gemini) */}
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(28,34,48,1) 0%, rgba(22,27,38,1) 100%)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '12px 16px',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--groww-green)', fontWeight: 700, fontSize: '12px' }}>
+                      <Sparkles size={14} /> WHAT CHANGED SINCE YOU LAST CHECKED
+                    </div>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={13} color="var(--text-muted)" />
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Away window:</span>
+                      <select
+                        value={sinceMinutes}
+                        onChange={(e) => setSinceMinutes(Number(e.target.value))}
+                        style={{ padding: '2px 6px', fontSize: '11px', height: '24px' }}
+                      >
+                        <option value={15}>15 mins</option>
+                        <option value={30}>30 mins</option>
+                        <option value={45}>45 mins</option>
+                        <option value={60}>1 hour</option>
+                        <option value={120}>2 hours</option>
+                      </select>
+                    </div>
+                  </div>
 
-        {/* RIGHT PANEL: Deep Dive & Live Intraday Chart */}
-        <aside style={{
-          width: `${rightWidth}px`,
-          minWidth: '280px',
-          maxWidth: '600px',
-          background: 'var(--bg-secondary)',
-          display: 'flex',
-          flexDirection: 'column',
-          padding: '16px',
-          gap: '14px',
-          overflowY: 'auto',
-          flexShrink: 0
-        }}>
-          {activeStockInfo ? (
-            <>
-              <div>
-                <div style={{ fontSize: '10px', color: 'var(--groww-green)', fontWeight: 700 }}>{activeStockInfo.sector.toUpperCase()}</div>
-                <div style={{ fontSize: '18px', fontWeight: 700 }}>{activeStockInfo.name}</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>NSE: {activeStockInfo.symbol}</div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                <span style={{ fontSize: '22px', fontWeight: 700 }}>₹{activeStockInfo.current_price.toFixed(2)}</span>
-                <span className={`badge ${activeStockInfo.pct_change_since_seen >= 0 ? 'badge-green' : 'badge-red'}`}>
-                  {activeStockInfo.pct_change_since_seen >= 0 ? '+' : ''}{activeStockInfo.pct_change_since_seen}%
-                </span>
-              </div>
-
-              {/* Real 1-minute Intraday Chart */}
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px' }}>
-                <div style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px' }}>1-MIN INTRADAY CANDLE TIMELINE</div>
-                <MiniChart candles={candles} height={150} />
-              </div>
-
-              {/* Anomaly & Attention Breakdown */}
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700 }}>ML ANOMALY EVALUATION</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Price at Checkpoint:</span>
-                  <span style={{ fontWeight: 600 }}>₹{activeStockInfo.price_at_last_seen.toFixed(2)}</span>
+                  <p style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-primary)', margin: 0 }}>
+                    {intelligence?.ai_digest || 'Evaluating multi-variate statistical anomalies and calculating attention scores...'}
+                  </p>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Volume Surge:</span>
-                  <span style={{ fontWeight: 600 }}>{activeStockInfo.volume_surge_ratio}x normal</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Attention Score:</span>
-                  <span style={{ fontWeight: 700, color: 'var(--groww-green)' }}>{activeStockInfo.attention_score} / 1.0</span>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div style={{ color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center', marginTop: '40px' }}>
-              Select a stock from the watchlist to inspect intraday chart and metrics.
-            </div>
-          )}
-        </aside>
+
+                {renderWatchlistTable()}
+              </>
+            )}
+          </div>
+
+        </div>
 
       </div>
     </div>
