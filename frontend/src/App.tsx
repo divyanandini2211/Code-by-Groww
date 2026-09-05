@@ -3,7 +3,7 @@ import {
   TrendingUp, Clock, Sparkles, Activity, Plus, Trash2, 
   Search, CheckCircle2, ChevronRight, Zap, RefreshCw,
   PanelLeftClose, PanelLeftOpen, List, User as UserIcon, LogIn, LogOut, ShieldCheck,
-  Gauge, FastForward, Play, AlertCircle
+  Gauge, FastForward, Play, AlertCircle, Home, Cpu, ArrowRight
 } from 'lucide-react';
 import { api } from './services/api';
 import { Stock, Watchlist, IntelligenceResponse, MarketStatus, Candle, User } from './types';
@@ -11,6 +11,9 @@ import { DetailedChart } from './components/DetailedChart';
 import { useMarketWebSocket } from './hooks/useMarketWebSocket';
 
 export function App() {
+  // Navigation View: 'HOME' (Landing / Marketing page) | 'DASHBOARD' (Live Trading Terminal)
+  const [currentView, setCurrentView] = useState<'HOME' | 'DASHBOARD'>('DASHBOARD');
+
   // Resizable Panel Widths (like VS Code) & Collapsible Sidebar
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [leftWidth, setLeftWidth] = useState(210);
@@ -268,6 +271,7 @@ export function App() {
         setCurrentUser(res.user);
         setShowAuthModal(false);
         setAuthPassword('');
+        setCurrentView('DASHBOARD'); // Take user to live trading terminal!
 
         // If market is down when user logs in, show prompt immediately!
         if (marketStatus?.status === 'CLOSED') {
@@ -303,6 +307,7 @@ export function App() {
   const handleLogout = async () => {
     await api.logout();
     setCurrentUser(null);
+    setCurrentView('HOME'); // Navigate directly to Home Page upon logout!
     cacheRef.current = {};
     const lists = await api.getWatchlists();
     setWatchlists(lists);
@@ -578,74 +583,436 @@ export function App() {
     </div>
   );
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg-primary)', userSelect: isDraggingLeft.current || isDraggingCenter.current ? 'none' : 'auto' }}>
-      
-      {/* Top Header Bar */}
+  // RENDER COMPONENT: High-End Home / Landing Page
+  const renderHomePage = () => (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      width: '100%',
+      overflowY: 'auto',
+      background: 'radial-gradient(ellipse at top, #111a28 0%, #0c1017 100%)',
+      color: 'var(--text-primary)'
+    }}>
+      {/* Home Top Navigation */}
       <header style={{
-        height: '52px',
+        height: '62px',
         borderBottom: '1px solid var(--border-color)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 20px',
+        padding: '0 32px',
+        background: 'rgba(12, 16, 23, 0.85)',
+        backdropFilter: 'blur(12px)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <TrendingUp size={20} color="#000" />
+          </div>
+          <span style={{ fontWeight: 800, fontSize: '18px', letterSpacing: '-0.5px' }}>
+            Groww <span style={{ color: 'var(--groww-green)', fontWeight: 600, fontSize: '13px' }}>Smart Watchlist</span>
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div
+            onClick={() => setShowSimPromptModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              padding: '5px 12px',
+              borderRadius: '20px',
+              fontSize: '11px',
+              color: marketStatus?.status === 'OPEN' ? 'var(--groww-green)' : '#ffba00'
+            }}
+            title="Click to configure Market Simulation"
+          >
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'currentColor' }}></span>
+            <span>{marketStatus?.status === 'OPEN' ? 'Market Live' : `Simulation Replay: ${simDate}`}</span>
+          </div>
+
+          <button
+            onClick={() => setCurrentView('DASHBOARD')}
+            style={{
+              background: 'transparent',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              padding: '7px 16px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            Launch Terminal <ArrowRight size={13} />
+          </button>
+
+          {currentUser ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '5px 12px', borderRadius: '6px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>{currentUser.name}</span>
+              <button
+                onClick={handleLogout}
+                title="Log out"
+                style={{ background: 'transparent', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', cursor: 'pointer', border: 'none' }}
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                setAuthError('');
+                setAuthMode('LOGIN');
+                setShowAuthModal(true);
+              }}
+              style={{
+                background: 'var(--groww-green)',
+                color: '#000',
+                padding: '7px 16px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                border: 'none'
+              }}
+            >
+              <LogIn size={13} color="#000" /> Sign In
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section style={{
+        padding: '60px 24px 40px',
+        maxWidth: '1080px',
+        margin: '0 auto',
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '20px'
+      }}>
+        {/* Subtitle Pill */}
+        <div style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'rgba(0, 210, 144, 0.1)',
+          border: '1px solid rgba(0, 210, 144, 0.25)',
+          padding: '6px 16px',
+          borderRadius: '24px',
+          fontSize: '12px',
+          color: 'var(--groww-green)',
+          fontWeight: 600
+        }}>
+          <Sparkles size={14} /> Powered by Google Gemini & ML Attention Anomaly Engine
+        </div>
+
+        {/* Main Headline */}
+        <h1 style={{
+          fontSize: '44px',
+          fontWeight: 800,
+          lineHeight: '1.2',
+          letterSpacing: '-1.2px',
+          maxWidth: '860px',
+          margin: 0
+        }}>
+          Smart Market Watchlists that tell you <span style={{
+            background: 'linear-gradient(90deg, #00D09C 0%, #00F5B4 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent'
+          }}>what changed while you were away</span>.
+        </h1>
+
+        {/* Supporting Paragraph */}
+        <p style={{
+          fontSize: '15px',
+          color: 'var(--text-secondary)',
+          maxWidth: '680px',
+          lineHeight: '1.6',
+          margin: 0
+        }}>
+          Stop scanning through static ticker tables. Our multi-variate Isolation Forest anomaly engine detects sudden volume surges, tracks price departures from your checkpoints, and generates AI executive summaries in real-time.
+        </p>
+
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: '14px', marginTop: '12px' }}>
+          <button
+            onClick={() => setCurrentView('DASHBOARD')}
+            style={{
+              background: 'var(--groww-green)',
+              color: '#000',
+              fontWeight: 700,
+              fontSize: '14px',
+              padding: '12px 28px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: 'pointer',
+              border: 'none',
+              boxShadow: '0 8px 24px rgba(0,208,156,0.35)'
+            }}
+          >
+            Launch Trading Terminal <ArrowRight size={16} color="#000" />
+          </button>
+
+          {!currentUser ? (
+            <button
+              onClick={() => {
+                setAuthError('');
+                setAuthMode('REGISTER');
+                setShowAuthModal(true);
+              }}
+              style={{
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                fontWeight: 600,
+                fontSize: '14px',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              Sign Up with Neon DB
+            </button>
+          ) : (
+            <button
+              onClick={() => setCurrentView('DASHBOARD')}
+              style={{
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-color)',
+                fontWeight: 600,
+                fontSize: '14px',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+            >
+              View My Watchlists
+            </button>
+          )}
+        </div>
+
+        {/* Real-Time Market Ticker Ribbon */}
+        <div style={{
+          width: '100%',
+          maxWidth: '920px',
+          marginTop: '32px',
+          background: 'rgba(22, 27, 38, 0.7)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '10px',
+          padding: '12px 20px',
+          display: 'flex',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          {(intelligence?.ranked_insights?.slice(0, 5) || [
+            { symbol: 'RELIANCE', current_price: 1329.4, pct_change_since_seen: 0.12 },
+            { symbol: 'PAYTM', current_price: 1669.7, pct_change_since_seen: -1.2 },
+            { symbol: 'SUNPHARMA', current_price: 1901.9, pct_change_since_seen: 2.11 },
+            { symbol: 'TCS', current_price: 2323.3, pct_change_since_seen: -0.07 },
+            { symbol: 'HINDUNILVR', current_price: 1966.6, pct_change_since_seen: 0.69 }
+          ]).map((s) => (
+            <div key={s.symbol} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+              <span style={{ fontWeight: 700 }}>{s.symbol}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>₹{s.current_price.toFixed(1)}</span>
+              <span className={`badge ${s.pct_change_since_seen >= 0 ? 'badge-green' : 'badge-red'}`} style={{ fontSize: '10px', padding: '1px 5px' }}>
+                {s.pct_change_since_seen >= 0 ? '+' : ''}{s.pct_change_since_seen}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 4 Feature Pillars */}
+      <section style={{
+        maxWidth: '1080px',
+        margin: '0 auto',
+        padding: '20px 24px 50px',
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+        gap: '16px'
+      }}>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(0,210,144,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--groww-green)' }}>
+            <Sparkles size={18} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>What Changed AI Digest</h3>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+            Generates executive natural language briefings for your away window with Google Gemini, highlighting key trends and abnormal surges.
+          </p>
+        </div>
+
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(255,186,0,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--groww-amber)' }}>
+            <Cpu size={18} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>ML Attention Engine</h3>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+            Multi-variate Isolation Forest calculates dynamic attention scores, sorting 30+ equities by volatility, volume surges, and order momentum.
+          </p>
+        </div>
+
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(0,180,216,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00b4d8' }}>
+            <Gauge size={18} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Market Replay & Simulation</h3>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+            When exchanges are closed, replay full intraday sessions in real-time. Speed up safely up to 10x without event queue latency.
+          </p>
+        </div>
+
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(157,78,221,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9d4edd' }}>
+            <ShieldCheck size={18} />
+          </div>
+          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>Neon DB Cloud Sync</h3>
+          <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+            Robust PostgreSQL serverless database persistence for user watchlists, checkpoint cursors, and custom portfolios across devices.
+          </p>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer style={{
+        marginTop: 'auto',
+        borderTop: '1px solid var(--border-color)',
+        padding: '16px 32px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        fontSize: '11px',
+        color: 'var(--text-muted)',
         background: 'var(--bg-secondary)',
         flexShrink: 0
       }}>
-        {/* Left: Brand Logo & Live Speed-Up Slider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <TrendingUp size={16} color="#000" />
-            </div>
-            <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '-0.5px' }}>Groww <span style={{ color: 'var(--groww-green)', fontWeight: 500, fontSize: '12px' }}>Smart Watchlist</span></span>
-          </div>
+        <span>© 2026 Groww Smart Watchlist • Powered by Google DeepMind ML & Neon DB</span>
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <span onClick={() => setCurrentView('DASHBOARD')} style={{ cursor: 'pointer', color: 'var(--groww-green)' }}>Launch Terminal</span>
+          <span onClick={() => setShowSimPromptModal(true)} style={{ cursor: 'pointer' }}>Market Simulation</span>
+        </div>
+      </footer>
+    </div>
+  );
 
-          {/* Live Speed-Up Slider */}
-          <div style={{
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden', background: 'var(--bg-primary)', userSelect: isDraggingLeft.current || isDraggingCenter.current ? 'none' : 'auto' }}>
+      
+      {currentView === 'HOME' ? (
+        renderHomePage()
+      ) : (
+        <>
+          {/* Top Header Bar */}
+          <header style={{
+            height: '52px',
+            borderBottom: '1px solid var(--border-color)',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-color)',
-            padding: '4px 12px',
-            borderRadius: '6px'
+            justifyContent: 'space-between',
+            padding: '0 20px',
+            background: 'var(--bg-secondary)',
+            flexShrink: 0
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--groww-green)', fontSize: '11px', fontWeight: 600 }}>
-              <FastForward size={13} />
-              <span style={{ color: 'var(--text-secondary)' }}>Speed:</span>
-              <b style={{ color: 'var(--text-primary)', minWidth: '32px' }}>{simSpeed.toFixed(1)}x</b>
-            </div>
-            
-            <input
-              type="range"
-              min="0.5"
-              max="10.0"
-              step="0.5"
-              value={simSpeed}
-              onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-              style={{
-                width: '80px',
-                accentColor: 'var(--groww-green)',
-                cursor: 'pointer',
-                height: '4px'
-              }}
-              title={`Simulation playback speed: ${simSpeed}x (ML safe limit: 10x)`}
-            />
+            {/* Left: Brand Logo & Live Speed-Up Slider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div 
+                onClick={() => setCurrentView('HOME')}
+                title="Go to Home Page"
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: 'var(--groww-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <TrendingUp size={16} color="#000" />
+                </div>
+                <span style={{ fontWeight: 700, fontSize: '16px', letterSpacing: '-0.5px' }}>Groww <span style={{ color: 'var(--groww-green)', fontWeight: 500, fontSize: '12px' }}>Smart Watchlist</span></span>
+              </div>
 
-            <span style={{
-              fontSize: '9px',
-              padding: '1px 5px',
-              borderRadius: '4px',
-              background: simSpeed >= 10 ? 'rgba(235,91,60,0.15)' : 'var(--groww-green-bg)',
-              color: simSpeed >= 10 ? 'var(--groww-red)' : 'var(--groww-green)',
-              fontWeight: 600,
-              letterSpacing: '0.3px'
-            }}>
-              {simSpeed >= 10 ? 'ML MAX' : 'ML SAFE'}
-            </span>
-          </div>
-        </div>
+              {/* Home Page Link */}
+              <button
+                onClick={() => setCurrentView('HOME')}
+                title="Back to Home Page"
+                style={{
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  padding: '4px 9px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <Home size={12} /> Home
+              </button>
+
+              {/* Live Speed-Up Slider */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-color)',
+                padding: '4px 12px',
+                borderRadius: '6px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--groww-green)', fontSize: '11px', fontWeight: 600 }}>
+                  <FastForward size={13} />
+                  <span style={{ color: 'var(--text-secondary)' }}>Speed:</span>
+                  <b style={{ color: 'var(--text-primary)', minWidth: '32px' }}>{simSpeed.toFixed(1)}x</b>
+                </div>
+                
+                <input
+                  type="range"
+                  min="0.5"
+                  max="10.0"
+                  step="0.5"
+                  value={simSpeed}
+                  onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+                  style={{
+                    width: '80px',
+                    accentColor: 'var(--groww-green)',
+                    cursor: 'pointer',
+                    height: '4px'
+                  }}
+                  title={`Simulation playback speed: ${simSpeed}x (ML safe limit: 10x)`}
+                />
+
+                <span style={{
+                  fontSize: '9px',
+                  padding: '1px 5px',
+                  borderRadius: '4px',
+                  background: simSpeed >= 10 ? 'rgba(235,91,60,0.15)' : 'var(--groww-green-bg)',
+                  color: simSpeed >= 10 ? 'var(--groww-red)' : 'var(--groww-green)',
+                  fontWeight: 600,
+                  letterSpacing: '0.3px'
+                }}>
+                  {simSpeed >= 10 ? 'ML MAX' : 'ML SAFE'}
+                </span>
+              </div>
+            </div>
 
         {/* Right: Search, Checkpoint, and User Profile */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -764,346 +1131,7 @@ export function App() {
         </div>
       </header>
 
-      {/* Full End-to-End Authentication Modal */}
-      {showAuthModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.75)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{
-            width: '360px',
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '24px',
-            boxShadow: '0 16px 40px rgba(0,0,0,0.8)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShieldCheck size={20} color="var(--groww-green)" />
-                <span style={{ fontWeight: 700, fontSize: '15px' }}>
-                  {authMode === 'LOGIN' ? 'Sign In to Groww' : 'Create Groww Account'}
-                </span>
-              </div>
-              <button
-                onClick={() => setShowAuthModal(false)}
-                style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '16px', fontWeight: 600 }}
-              >
-                ✕
-              </button>
-            </div>
 
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-              Persist your custom watchlists, checkpoint cursors, and ML alert preferences directly to <b>Neon Cloud DB</b>.
-            </p>
-
-            {authError && (
-              <div style={{ background: 'var(--groww-red-bg)', color: 'var(--groww-red)', border: '1px solid rgba(235,91,60,0.3)', padding: '8px 10px', borderRadius: '6px', fontSize: '11px' }}>
-                {authError}
-              </div>
-            )}
-
-            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {authMode === 'REGISTER' && (
-                <div>
-                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Full Name</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Divya Nandini"
-                    value={authName}
-                    onChange={(e) => setAuthName(e.target.value)}
-                    style={{ width: '100%', height: '34px', fontSize: '12px' }}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Email Address</label>
-                <input
-                  type="email"
-                  required
-                  placeholder="trader@groww.in"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  style={{ width: '100%', height: '34px', fontSize: '12px' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Password</label>
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  style={{ width: '100%', height: '34px', fontSize: '12px' }}
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isAuthLoading}
-                style={{
-                  background: 'var(--groww-green)',
-                  color: '#000',
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  padding: '10px',
-                  borderRadius: '6px',
-                  marginTop: '6px',
-                  cursor: isAuthLoading ? 'not-allowed' : 'pointer',
-                  opacity: isAuthLoading ? 0.7 : 1
-                }}
-              >
-                {isAuthLoading ? 'Syncing with Neon DB...' : authMode === 'LOGIN' ? 'Sign In' : 'Create Account'}
-              </button>
-            </form>
-
-            <div style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-              {authMode === 'LOGIN' ? (
-                <span>
-                  Don't have an account?{' '}
-                  <b
-                    onClick={() => { setAuthMode('REGISTER'); setAuthError(''); }}
-                    style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
-                  >
-                    Register now
-                  </b>
-                </span>
-              ) : (
-                <span>
-                  Already registered?{' '}
-                  <b
-                    onClick={() => { setAuthMode('LOGIN'); setAuthError(''); }}
-                    style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
-                  >
-                    Sign in here
-                  </b>
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Market Down Replay Simulation Prompt Modal */}
-      {showSimPromptModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.8)',
-          backdropFilter: 'blur(5px)',
-          zIndex: 10000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          <div style={{
-            width: '450px',
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '12px',
-            padding: '24px',
-            boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
-          }}>
-            {/* Top Bar */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '8px',
-                  background: 'rgba(255, 186, 0, 0.15)',
-                  border: '1px solid rgba(255, 186, 0, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  <AlertCircle size={20} color="#ffba00" />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    Market Simulation
-                  </h3>
-                  <span style={{ fontSize: '11px', color: 'var(--groww-amber)' }}>
-                    NSE & BSE Markets Currently Closed
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowSimPromptModal(false)}
-                style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '16px', fontWeight: 600, padding: '2px' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Prompt Banner */}
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(255,186,0,0.1) 0%, rgba(0,210,144,0.08) 100%)',
-              border: '1px solid rgba(255,186,0,0.3)',
-              borderRadius: '8px',
-              padding: '14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px'
-            }}>
-              <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffc107', lineHeight: '1.3' }}>
-                "Market is down, use last ({simDate})'s data to simulate?"
-              </div>
-              <p style={{ margin: 0, fontSize: '12px', lineHeight: '1.45', color: 'var(--text-secondary)' }}>
-                Real-time trading hours have concluded. You can replay the full 1-minute historical intraday sequence from <b>{simDate}</b> to watch prices, candle charts, and ML attention signals update dynamically.
-              </p>
-            </div>
-
-            {/* Speed Slider Section */}
-            <div style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '8px',
-              padding: '14px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Gauge size={15} color="var(--groww-green)" /> Simulation Playback Speed
-                </span>
-                <span style={{
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  color: 'var(--groww-green)',
-                  background: 'var(--groww-green-bg)',
-                  border: '1px solid rgba(0, 210, 144, 0.3)',
-                  padding: '2px 8px',
-                  borderRadius: '4px'
-                }}>
-                  {simSpeed.toFixed(1)}x Speed
-                </span>
-              </div>
-
-              {/* Slider Component */}
-              <input
-                type="range"
-                min="0.5"
-                max="10.0"
-                step="0.5"
-                value={simSpeed}
-                onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
-                style={{
-                  width: '100%',
-                  accentColor: 'var(--groww-green)',
-                  cursor: 'pointer'
-                }}
-              />
-
-              {/* Preset Speed Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
-                {[0.5, 1.0, 2.0, 5.0, 10.0].map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => handleSpeedChange(s)}
-                    style={{
-                      flex: 1,
-                      padding: '4px 0',
-                      fontSize: '11px',
-                      fontWeight: simSpeed === s ? 700 : 500,
-                      background: simSpeed === s ? 'var(--groww-green)' : 'var(--bg-secondary)',
-                      color: simSpeed === s ? '#000' : 'var(--text-secondary)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '4px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {s}x
-                  </button>
-                ))}
-              </div>
-
-              {/* ML Safety Constraint Note */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '11px',
-                color: 'var(--groww-green)',
-                background: 'rgba(0, 210, 144, 0.08)',
-                padding: '8px 10px',
-                borderRadius: '6px',
-                border: '1px solid rgba(0, 210, 144, 0.2)'
-              }}>
-                <Zap size={14} color="var(--groww-green)" style={{ flexShrink: 0 }} />
-                <span>
-                  <b>ML Safe Speed Limit (Max 10x):</b> Keeps tick intervals at &ge;1.0s so the Isolation Forest ML attention model evaluates all stocks without event queue latency.
-                </span>
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>
-              <button
-                type="button"
-                onClick={() => setShowSimPromptModal(false)}
-                style={{
-                  flex: 1,
-                  background: 'var(--groww-green)',
-                  color: '#000',
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  padding: '11px 16px',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  cursor: 'pointer'
-                }}
-              >
-                <Play size={14} color="#000" fill="#000" /> Start Live Simulation ({simSpeed}x)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowSimPromptModal(false)}
-                style={{
-                  background: 'transparent',
-                  color: 'var(--text-secondary)',
-                  border: '1px solid var(--border-color)',
-                  padding: '11px 16px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Main Resizable Splitter Layout (VS Code Style) */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
@@ -1458,6 +1486,349 @@ export function App() {
           </div>
         </div>
       </footer>
+        </>
+      )}
+
+      {/* Full End-to-End Authentication Modal */}
+      {showAuthModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.75)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{
+            width: '360px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '24px',
+            boxShadow: '0 16px 40px rgba(0,0,0,0.8)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={20} color="var(--groww-green)" />
+                <span style={{ fontWeight: 700, fontSize: '15px' }}>
+                  {authMode === 'LOGIN' ? 'Sign In to Groww' : 'Create Groww Account'}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '16px', fontWeight: 600 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+              Persist your custom watchlists, checkpoint cursors, and ML alert preferences directly to <b>Neon Cloud DB</b>.
+            </p>
+
+            {authError && (
+              <div style={{ background: 'var(--groww-red-bg)', color: 'var(--groww-red)', border: '1px solid rgba(235,91,60,0.3)', padding: '8px 10px', borderRadius: '6px', fontSize: '11px' }}>
+                {authError}
+              </div>
+            )}
+
+            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {authMode === 'REGISTER' && (
+                <div>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Divya Nandini"
+                    value={authName}
+                    onChange={(e) => setAuthName(e.target.value)}
+                    style={{ width: '100%', height: '34px', fontSize: '12px' }}
+                  />
+                </div>
+              )}
+
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Email Address</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="trader@groww.in"
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  style={{ width: '100%', height: '34px', fontSize: '12px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Password</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  style={{ width: '100%', height: '34px', fontSize: '12px' }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isAuthLoading}
+                style={{
+                  background: 'var(--groww-green)',
+                  color: '#000',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  padding: '10px',
+                  borderRadius: '6px',
+                  marginTop: '6px',
+                  cursor: isAuthLoading ? 'not-allowed' : 'pointer',
+                  opacity: isAuthLoading ? 0.7 : 1
+                }}
+              >
+                {isAuthLoading ? 'Syncing with Neon DB...' : authMode === 'LOGIN' ? 'Sign In' : 'Create Account'}
+              </button>
+            </form>
+
+            <div style={{ textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
+              {authMode === 'LOGIN' ? (
+                <span>
+                  Don't have an account?{' '}
+                  <b
+                    onClick={() => { setAuthMode('REGISTER'); setAuthError(''); }}
+                    style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
+                  >
+                    Register now
+                  </b>
+                </span>
+              ) : (
+                <span>
+                  Already registered?{' '}
+                  <b
+                    onClick={() => { setAuthMode('LOGIN'); setAuthError(''); }}
+                    style={{ color: 'var(--groww-green)', cursor: 'pointer' }}
+                  >
+                    Sign in here
+                  </b>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Market Down Replay Simulation Prompt Modal */}
+      {showSimPromptModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(5px)',
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}>
+          <div style={{
+            width: '450px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '12px',
+            padding: '24px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            {/* Top Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: 'rgba(255, 186, 0, 0.15)',
+                  border: '1px solid rgba(255, 186, 0, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <AlertCircle size={20} color="#ffba00" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    Market Simulation
+                  </h3>
+                  <span style={{ fontSize: '11px', color: 'var(--groww-amber)' }}>
+                    NSE & BSE Markets Currently Closed
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSimPromptModal(false)}
+                style={{ background: 'transparent', color: 'var(--text-muted)', fontSize: '16px', fontWeight: 600, padding: '2px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Prompt Banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(255,186,0,0.1) 0%, rgba(0,210,144,0.08) 100%)',
+              border: '1px solid rgba(255,186,0,0.3)',
+              borderRadius: '8px',
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffc107', lineHeight: '1.3' }}>
+                "Market is down, use last ({simDate})'s data to simulate?"
+              </div>
+              <p style={{ margin: 0, fontSize: '12px', lineHeight: '1.45', color: 'var(--text-secondary)' }}>
+                Real-time trading hours have concluded. You can replay the full 1-minute historical intraday sequence from <b>{simDate}</b> to watch prices, candle charts, and ML attention signals update dynamically.
+              </p>
+            </div>
+
+            {/* Speed Slider Section */}
+            <div style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Gauge size={15} color="var(--groww-green)" /> Simulation Playback Speed
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: 'var(--groww-green)',
+                  background: 'var(--groww-green-bg)',
+                  border: '1px solid rgba(0, 210, 144, 0.3)',
+                  padding: '2px 8px',
+                  borderRadius: '4px'
+                }}>
+                  {simSpeed.toFixed(1)}x Speed
+                </span>
+              </div>
+
+              {/* Slider Component */}
+              <input
+                type="range"
+                min="0.5"
+                max="10.0"
+                step="0.5"
+                value={simSpeed}
+                onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+                style={{
+                  width: '100%',
+                  accentColor: 'var(--groww-green)',
+                  cursor: 'pointer'
+                }}
+              />
+
+              {/* Preset Speed Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '4px' }}>
+                {[0.5, 1.0, 2.0, 5.0, 10.0].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => handleSpeedChange(s)}
+                    style={{
+                      flex: 1,
+                      padding: '4px 0',
+                      fontSize: '11px',
+                      fontWeight: simSpeed === s ? 700 : 500,
+                      background: simSpeed === s ? 'var(--groww-green)' : 'var(--bg-secondary)',
+                      color: simSpeed === s ? '#000' : 'var(--text-secondary)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+
+              {/* ML Safety Constraint Note */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '11px',
+                color: 'var(--groww-green)',
+                background: 'rgba(0, 210, 144, 0.08)',
+                padding: '8px 10px',
+                borderRadius: '6px',
+                border: '1px solid rgba(0, 210, 144, 0.2)'
+              }}>
+                <Zap size={14} color="var(--groww-green)" style={{ flexShrink: 0 }} />
+                <span>
+                  <b>ML Safe Speed Limit (Max 10x):</b> Keeps tick intervals at &ge;1.0s so the Isolation Forest ML attention model evaluates all stocks without event queue latency.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '2px' }}>
+              <button
+                type="button"
+                onClick={() => setShowSimPromptModal(false)}
+                style={{
+                  flex: 1,
+                  background: 'var(--groww-green)',
+                  color: '#000',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  padding: '11px 16px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                <Play size={14} color="#000" fill="#000" /> Start Live Simulation ({simSpeed}x)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSimPromptModal(false)}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-color)',
+                  padding: '11px 16px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
