@@ -43,16 +43,11 @@ export function App() {
     loadInitialData();
   }, []);
 
-  // Watchlist selection with instant cache preview + background sync
+  // Watchlist selection: Clear display immediately and show loading indicator
   useEffect(() => {
     if (selectedWatchlistId) {
-      const cacheKey = `${selectedWatchlistId}_${sinceMinutes}`;
-      if (cacheRef.current[cacheKey]) {
-        // Instant render from client cache
-        setIntelligence(cacheRef.current[cacheKey]);
-      } else {
-        setIsSwitching(true);
-      }
+      setIsSwitching(true);
+      setIntelligence(null); // Clear previous watchlist data completely
       loadIntelligence(selectedWatchlistId, sinceMinutes);
     }
   }, [selectedWatchlistId, sinceMinutes]);
@@ -442,15 +437,30 @@ export function App() {
             </p>
           </div>
 
-          {/* Ranked Smart Watchlist Table */}
-          <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+          {/* Ranked Smart Watchlist Table with Clean Loading Overlay */}
+          <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', minHeight: '360px', position: 'relative' }}>
             <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 700, fontSize: '13px' }}>Ranked Watchlist (Sorted by ML Attention Score)</span>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {isSwitching ? 'Syncing...' : `${intelligence?.ranked_insights.length || 0} Equities Monitored`}
+                {isSwitching ? 'Evaluating...' : `${intelligence?.ranked_insights?.length || 0} Equities Monitored`}
               </span>
             </div>
 
+            {isSwitching ? (
+              <div style={{
+                height: '320px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '12px',
+                color: 'var(--text-secondary)'
+              }}>
+                <RefreshCw size={28} color="var(--groww-green)" className="spinner" />
+                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>Loading Watchlist & Calculating ML Attention Scores...</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Fetching checkpoint deltas & volume surge multipliers</div>
+              </div>
+            ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
               <thead>
                 <tr style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', fontSize: '10px', textTransform: 'uppercase' }}>
@@ -464,7 +474,7 @@ export function App() {
                 </tr>
               </thead>
               <tbody>
-                {intelligence?.ranked_insights.map((stock) => {
+                {intelligence?.ranked_insights?.map((stock) => {
                   const isSelected = selectedStock === stock.symbol;
                   const isUp = stock.pct_change_since_seen >= 0;
 
@@ -541,7 +551,9 @@ export function App() {
                 })}
               </tbody>
             </table>
+            )}
           </div>
+
         </section>
 
         {/* DRAGGABLE DIVIDER 2 */}
