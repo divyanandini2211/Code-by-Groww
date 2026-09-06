@@ -29,3 +29,7 @@ pnpm-debug.log*
 # System
 .DS_Store
 Thumbs.db
+
+# Private Notes & Scripts
+DEMO_VIDEO_SCRIPT.md
+
