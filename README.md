@@ -22,7 +22,8 @@ Instead of showing static tables, the platform uses a **Machine Learning Attenti
 ## 📸 Visual Showcase
 
 ### 1. Interactive Dashboard & Smart Ranked Watchlist
-![Smart Watchlist Dashboard]("C:\Users\Divya Nandhini\OneDrive\Pictures\Screenshots\Screenshot 2026-09-06 182549.png")
+![Smart Watchlist Dashboard](<img width="1917" height="862" alt="Screenshot 2026-09-06 182549" src="https://github.com/user-attachments/assets/68a1fc72-4fc3-468f-b8db-4c32402689ce" />
+)
 *Real-time ranked equities table, ML Attention badges, volume surge multipliers, and interactive PixelCanvas background.*
 
 ---
